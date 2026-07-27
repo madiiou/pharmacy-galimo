@@ -1,0 +1,34 @@
+services:
+  db:
+    image: postgres:17
+    restart: always
+    environment:
+      POSTGRES_DB: pharmacy
+      POSTGRES_USER: pharmacy
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pharmacy_db_data:/var/lib/postgresql/data
+      - ./backend/migrations:/docker-entrypoint-initdb.d
+    networks:
+      - pharmacy_network
+
+  api:
+    build: ./backend
+    restart: always
+    environment:
+      DATABASE_URL: postgres://pharmacy:${DB_PASSWORD}@db:5432/pharmacy
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: 4000
+    ports:
+      - "127.0.0.1:4001:4000"
+    depends_on:
+      - db
+    networks:
+      - pharmacy_network
+
+volumes:
+  pharmacy_db_data:
+
+networks:
+  pharmacy_network:
+    driver: bridge
