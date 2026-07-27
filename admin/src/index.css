@@ -1,3 +1,373 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Poppins:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Paytm-inspired Design System - Clean Light Theme */
+
+@layer base {
+  :root {
+    /* Paytm Brand - Light theme with blue accent */
+    --background: 0 0% 98%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Primary: Paytm Blue */
+    --primary: 195 100% 47%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary: Light gray */
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 0 0% 94%;
+    --muted-foreground: 0 0% 45%;
+
+    /* Accent: Deep blue */
+    --accent: 220 85% 55%;
+    --accent-foreground: 0 0% 100%;
+
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    --ring: 195 100% 47%;
+
+    /* Clean shadows */
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-primary: 195 100% 47%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 96%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 0 0% 90%;
+    --sidebar-ring: 195 100% 47%;
+  }
+
+  .dark {
+    --background: 222 47% 11%;
+    --foreground: 210 20% 98%;
+
+    --card: 222 47% 14%;
+    --card-foreground: 210 20% 98%;
+
+    --popover: 222 47% 14%;
+    --popover-foreground: 210 20% 98%;
+
+    --primary: 195 100% 50%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 20% 98%;
+
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 220 85% 60%;
+    --accent-foreground: 0 0% 100%;
+
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 217 33% 25%;
+    --input: 217 33% 17%;
+    --ring: 195 100% 50%;
+
+    --sidebar-background: 222 47% 14%;
+    --sidebar-foreground: 210 20% 98%;
+    --sidebar-primary: 195 100% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 217 33% 17%;
+    --sidebar-accent-foreground: 210 20% 98%;
+    --sidebar-border: 217 33% 25%;
+    --sidebar-ring: 195 100% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display tracking-tight;
+  }
+}
+
+@layer components {
+  /* Clean card styles */
+  .card-elevated {
+    @apply bg-card rounded-2xl;
+    box-shadow: var(--shadow-md);
+  }
+  
+  .card-interactive {
+    @apply bg-card rounded-2xl transition-all duration-200;
+    box-shadow: var(--shadow-sm);
+  }
+  
+  .card-interactive:hover {
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-2px);
+  }
+
+  /* Paytm-style header */
+  .header-paytm {
+    @apply bg-primary text-primary-foreground;
+    box-shadow: var(--shadow-md);
+  }
+  
+  /* Quick action grid item */
+  .quick-action-item {
+    @apply flex flex-col items-center gap-2 p-3 rounded-xl transition-all duration-200;
+  }
+  
+  .quick-action-item:hover {
+    @apply bg-secondary;
+  }
+  
+  .quick-action-icon {
+    @apply w-12 h-12 rounded-2xl flex items-center justify-center;
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* Wallet card Paytm style */
+  .wallet-paytm {
+    @apply rounded-2xl overflow-hidden;
+    /* IMPORTANT: <Card> adds `bg-card` + `text-card-foreground` (Tailwind utilities)
+       which can override component-layer styles.
+       We force Paytm wallet styling here to keep the balance visible. */
+    background-color: hsl(var(--primary)) !important;
+    color: hsl(var(--primary-foreground)) !important;
+    border-color: transparent !important;
+    box-shadow: var(--shadow-lg);
+  }
+  
+  .wallet-paytm * {
+    color: inherit !important;
+  }
+  
+  .wallet-paytm button {
+    color: inherit !important;
+  }
+  
+  /* Service category badge */
+  .category-badge {
+    @apply px-3 py-1 rounded-full text-xs font-medium;
+  }
+  
+  /* Bottom navigation */
+  .bottom-nav {
+    @apply fixed bottom-0 left-0 right-0 bg-card border-t border-border;
+    box-shadow: 0 -4px 6px -1px rgb(0 0 0 / 0.05);
+  }
+  
+  /* Fade animations */
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-out forwards;
+  }
+  
+  .animate-fade-in-up {
+    animation: fadeInUp 0.4s ease-out forwards;
+  }
+  
+  .animate-scale-in {
+    animation: scaleIn 0.3s ease-out forwards;
+  }
+  
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  
+  @keyframes fadeInUp {
+    from { 
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to { 
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  @keyframes scaleIn {
+    from { 
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to { 
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  
+  /* Stagger animations */
+  .stagger-1 { animation-delay: 0.05s; }
+  .stagger-2 { animation-delay: 0.1s; }
+  .stagger-3 { animation-delay: 0.15s; }
+  .stagger-4 { animation-delay: 0.2s; }
+  .stagger-5 { animation-delay: 0.25s; }
+
+  /* Shimmer loading effect */
+  .shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      hsl(var(--muted) / 0.3),
+      transparent
+    );
+    animation: shimmer 1.5s infinite;
+  }
+  
+  @keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+
+  /* Paytm-style offer banner */
+  .offer-banner {
+    @apply bg-gradient-to-r from-warning/10 to-warning/5 border border-warning/20 rounded-xl p-4;
+  }
+
+  /* Icon background colors for services */
+  .icon-bg-blue { @apply bg-primary/10 text-primary; }
+  .icon-bg-green { @apply bg-success/10 text-success; }
+  .icon-bg-orange { @apply bg-warning/10 text-warning; }
+  .icon-bg-red { @apply bg-destructive/10 text-destructive; }
+  .icon-bg-purple { @apply bg-accent/10 text-accent; }
+  .icon-bg-gray { @apply bg-muted text-muted-foreground; }
+}
+
+@layer utilities {
+  /* Background patterns */
+  .bg-pattern-dots {
+    background-image: radial-gradient(circle, hsl(var(--border)) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+
+  /* Gradient text */
+  .text-gradient {
+    @apply bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent;
+  }
+
+  /* Safe area padding for mobile */
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* ============================================
+   Pharmacy Mobile Scope — Galimo Purple
+   Scoped to .pharmacy-scope to avoid global impact
+   ============================================ */
+.pharmacy-scope {
+  --ph-deep: 255 71% 14%;         /* #1a0a3c */
+  --ph-purple: 259 60% 44%;       /* #5a2db5 */
+  --ph-purple-2: 265 70% 60%;     /* light accent */
+  --ph-mint: 155 70% 65%;         /* success/accepted */
+  --ph-surface: 250 25% 97%;
+  --ph-card: 0 0% 100%;
+  --ph-muted: 250 20% 95%;
+  --ph-border: 250 20% 90%;
+  --ph-ink: 255 30% 15%;
+  --ph-ink-soft: 250 12% 45%;
+
+  font-family: 'Figtree', system-ui, sans-serif;
+  background: hsl(var(--ph-surface));
+  color: hsl(var(--ph-ink));
+}
+.pharmacy-scope h1,
+.pharmacy-scope h2,
+.pharmacy-scope h3,
+.pharmacy-scope .ph-display {
+  font-family: 'Outfit', system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+.pharmacy-scope .ph-gradient {
+  background: linear-gradient(160deg, hsl(var(--ph-deep)) 0%, hsl(var(--ph-purple)) 100%);
+}
+.pharmacy-scope .ph-chip {
+  background: hsl(var(--ph-card));
+  border: 1px solid hsl(var(--ph-border));
+  color: hsl(var(--ph-ink));
+}
+.pharmacy-scope .ph-chip-active {
+  background: hsl(var(--ph-deep));
+  border-color: hsl(var(--ph-deep));
+  color: #fff;
+}
+.pharmacy-scope .hide-scrollbar::-webkit-scrollbar { display: none; }
+.pharmacy-scope .hide-scrollbar { scrollbar-width: none; }
+.pharmacy-scope .ph-card {
+  background: hsl(var(--ph-card));
+  border-radius: 1.25rem;
+  box-shadow: 0 6px 20px -8px rgb(26 10 60 / 0.15), 0 2px 6px -2px rgb(26 10 60 / 0.08);
+}
+.pharmacy-scope .ph-btn-primary {
+  background: linear-gradient(135deg, hsl(var(--ph-deep)), hsl(var(--ph-purple)));
+  color: #fff;
+  border-radius: 9999px;
+  font-weight: 600;
+  transition: transform .15s ease, box-shadow .15s ease;
+  box-shadow: 0 8px 20px -6px rgb(90 45 181 / 0.5);
+}
+.pharmacy-scope .ph-btn-primary:active { transform: scale(0.97); }
+.pharmacy-scope .ph-btn-primary:disabled { opacity: 0.5; box-shadow: none; }
+
+@keyframes ph-bump {
+  0%   { transform: scale(1); }
+  30%  { transform: scale(1.25); }
+  60%  { transform: scale(0.92); }
+  100% { transform: scale(1); }
+}
+@keyframes ph-slide-up {
+  from { transform: translateY(30px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+.pharmacy-scope .ph-bump { animation: ph-bump .45s ease-out; }
+.pharmacy-scope .ph-slide-up { animation: ph-slide-up .3s ease-out; }
+.pharmacy-scope .ph-btn-added {
+  background: linear-gradient(135deg, #10b981, #059669) !important;
+  box-shadow: 0 8px 20px -6px rgb(16 185 129 / 0.5) !important;
+}
+
