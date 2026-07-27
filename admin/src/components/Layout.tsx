@@ -9,6 +9,7 @@ export function Layout({ children }: { children: ReactNode }) {
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-white shadow px-6 py-3 flex items-center justify-between">
         <div className="flex gap-4 font-medium">
+          <Link to="/shop">Boutique</Link>
           <Link to="/pharmacies">Pharmacies</Link>
           <Link to="/medicines">Médicaments</Link>
           <Link to="/orders">Commandes</Link>

@@ -6,6 +6,7 @@ import { authRouter } from "./routes/auth.js";
 import { pharmaciesRouter } from "./routes/pharmacies.js";
 import { medicinesRouter } from "./routes/medicines.js";
 import { ordersRouter } from "./routes/orders.js";
+import { scanMedicineRouter } from "./routes/scanMedicine.js";
 import { attachChat } from "./chat.js";
 
 const app = express();
@@ -21,6 +22,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/pharmacies", pharmaciesRouter);
 app.use("/api/medicines", medicinesRouter);
 app.use("/api/orders", ordersRouter);
+app.use("/api/scan-medicine", scanMedicineRouter);
 
 const httpServer = createServer(app);
 attachChat(httpServer);
