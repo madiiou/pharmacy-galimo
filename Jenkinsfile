@@ -4,7 +4,7 @@ pipeline {
     stages {
         stage('Prepare secrets') {
             steps {
-                sh 'cp /home/ubuntu/pharmacy-app/.env .env'
+                sh 'cp /var/lib/jenkins/pharmacy-app.env .env'
             }
         }
         stage('Build') {
