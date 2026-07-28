@@ -891,21 +891,6 @@ export default function Pharmacy() {
           </div>
           <div className="w-9" />
         </div>
-        <div className="px-4 pb-3">
-          <div className="bg-white/10 backdrop-blur rounded-full p-1 flex text-xs font-semibold">
-            {(["client", "pharmacien"] as Mode[]).map((m) => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                className={`flex-1 py-2 rounded-full transition ${
-                  mode === m ? "bg-white text-[hsl(var(--ph-deep))]" : "text-white/80"
-                }`}
-              >
-                {m === "client" ? "👤 Client" : "🏥 Pharmacien"}
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
 
       {mode === "client" ? (
