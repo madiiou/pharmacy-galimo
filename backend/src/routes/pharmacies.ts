@@ -5,13 +5,14 @@ import { requireAuth, requireRole } from "../auth.js";
 
 export const pharmaciesRouter = Router();
 
-// Public: liste des pharmacies actives (utilisé par le Flutter)
+// Liste de toutes les pharmacies (le filtrage client/actives sera géré côté
+// consommateur une fois le catalogue client branché sur la vraie API).
 pharmaciesRouter.get("/", async (_req, res) => {
   const result = await pool.query(
-    `SELECT id, name, logo_url, address, neighborhood, city, phone, whatsapp,
+    `SELECT id, name, owner_id, logo_url, address, neighborhood, city, phone, whatsapp,
             delivery_fee_gnf, delivery_zones, delivery_cities, opening_hours,
-            is_verified, rating, total_orders, description
-     FROM pharmacies WHERE is_active = true ORDER BY name`
+            is_active, is_verified, rating, total_orders, description
+     FROM pharmacies ORDER BY name`
   );
   res.json(result.rows);
 });
@@ -24,17 +25,14 @@ pharmaciesRouter.get("/mine", requireAuth, requireRole("pharmacy_partner"), asyn
 
 // Public: détail d'une pharmacie
 pharmaciesRouter.get("/:id", async (req, res) => {
-  const result = await pool.query(
-    "SELECT * FROM pharmacies WHERE id = $1 AND is_active = true",
-    [req.params.id]
-  );
+  const result = await pool.query("SELECT * FROM pharmacies WHERE id = $1", [req.params.id]);
   if (!result.rowCount) return res.status(404).json({ error: "Not found" });
   res.json(result.rows[0]);
 });
 
 const pharmacySchema = z.object({
   name: z.string().min(1),
-  ownerId: z.string().uuid().optional(),
+  ownerId: z.string().uuid().nullable().optional(),
   address: z.string().optional(),
   neighborhood: z.string().optional(),
   city: z.string().optional(),
@@ -42,7 +40,10 @@ const pharmacySchema = z.object({
   whatsapp: z.string().optional(),
   email: z.string().email().optional(),
   deliveryFeeGnf: z.number().int().nonnegative().default(0),
+  deliveryCities: z.array(z.string()).optional(),
   description: z.string().optional(),
+  isActive: z.boolean().optional(),
+  isVerified: z.boolean().optional(),
 });
 
 // Admin only: création d'une pharmacie
@@ -52,11 +53,13 @@ pharmaciesRouter.post("/", requireAuth, requireRole("admin"), async (req, res) =
   const p = parsed.data;
 
   const result = await pool.query(
-    `INSERT INTO pharmacies (name, owner_id, address, neighborhood, city, phone, whatsapp, email, delivery_fee_gnf, description)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+    `INSERT INTO pharmacies (name, owner_id, address, neighborhood, city, phone, whatsapp, email,
+                              delivery_fee_gnf, delivery_cities, description, is_active, is_verified)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
      RETURNING *`,
     [p.name, p.ownerId ?? null, p.address ?? null, p.neighborhood ?? null, p.city ?? null,
-     p.phone ?? null, p.whatsapp ?? null, p.email ?? null, p.deliveryFeeGnf, p.description ?? null]
+     p.phone ?? null, p.whatsapp ?? null, p.email ?? null, p.deliveryFeeGnf,
+     p.deliveryCities ?? [], p.description ?? null, p.isActive ?? true, p.isVerified ?? false]
   );
   res.status(201).json(result.rows[0]);
 });
@@ -83,19 +86,25 @@ pharmaciesRouter.patch("/:id", requireAuth, requireRole("admin", "pharmacy_partn
   const result = await pool.query(
     `UPDATE pharmacies SET
        name = COALESCE($1, name),
-       address = COALESCE($2, address),
-       neighborhood = COALESCE($3, neighborhood),
-       city = COALESCE($4, city),
-       phone = COALESCE($5, phone),
-       whatsapp = COALESCE($6, whatsapp),
-       email = COALESCE($7, email),
-       delivery_fee_gnf = COALESCE($8, delivery_fee_gnf),
-       description = COALESCE($9, description),
+       owner_id = COALESCE($2, owner_id),
+       address = COALESCE($3, address),
+       neighborhood = COALESCE($4, neighborhood),
+       city = COALESCE($5, city),
+       phone = COALESCE($6, phone),
+       whatsapp = COALESCE($7, whatsapp),
+       email = COALESCE($8, email),
+       delivery_fee_gnf = COALESCE($9, delivery_fee_gnf),
+       delivery_cities = COALESCE($10, delivery_cities),
+       description = COALESCE($11, description),
+       is_active = COALESCE($12, is_active),
+       is_verified = COALESCE($13, is_verified),
        updated_at = now()
-     WHERE id = $10
+     WHERE id = $14
      RETURNING *`,
-    [p.name ?? null, p.address ?? null, p.neighborhood ?? null, p.city ?? null, p.phone ?? null,
-     p.whatsapp ?? null, p.email ?? null, p.deliveryFeeGnf ?? null, p.description ?? null, req.params.id]
+    [p.name ?? null, p.ownerId ?? null, p.address ?? null, p.neighborhood ?? null, p.city ?? null,
+     p.phone ?? null, p.whatsapp ?? null, p.email ?? null, p.deliveryFeeGnf ?? null,
+     p.deliveryCities ?? null, p.description ?? null, p.isActive ?? null, p.isVerified ?? null,
+     req.params.id]
   );
   if (!result.rowCount) return res.status(404).json({ error: "Not found" });
   res.json(result.rows[0]);

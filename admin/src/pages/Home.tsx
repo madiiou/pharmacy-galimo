@@ -30,13 +30,13 @@ export function Home() {
         </Link>
 
         <Link
-          to="/pharmacies"
+          to="/admin-pharmacies"
           className="flex items-center gap-4 bg-white rounded-xl shadow p-5 hover:bg-gray-50"
         >
           <ShieldCheck className="h-8 w-8 text-purple-700" />
           <div>
             <p className="font-medium">Espace Admin</p>
-            <p className="text-sm text-gray-500">Gestion des pharmacies, médicaments et commandes (données réelles)</p>
+            <p className="text-sm text-gray-500">Console pharmacies : KPIs, revenus, monitoring, contrôle</p>
           </div>
         </Link>
       </div>

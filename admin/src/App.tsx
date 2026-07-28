@@ -8,6 +8,7 @@ import { Medicines } from "./pages/Medicines";
 import { Orders } from "./pages/Orders";
 import { OrderDetail } from "./pages/OrderDetail";
 import Pharmacy from "./pages/Pharmacy";
+import AdminPharmacies from "./pages/AdminPharmacies";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { token } = useAuth();
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
           <Route path="/shop" element={<Pharmacy />} />
+          <Route path="/admin-pharmacies" element={<RequireAuth><AdminPharmacies /></RequireAuth>} />
           <Route path="/pharmacies" element={<RequireAuth><Pharmacies /></RequireAuth>} />
           <Route path="/medicines" element={<RequireAuth><Medicines /></RequireAuth>} />
           <Route path="/orders" element={<RequireAuth><Orders /></RequireAuth>} />
