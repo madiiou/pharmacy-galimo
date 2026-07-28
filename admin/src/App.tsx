@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { Login } from "./pages/Login";
+import { Home } from "./pages/Home";
 import { Pharmacies } from "./pages/Pharmacies";
 import { Medicines } from "./pages/Medicines";
 import { Orders } from "./pages/Orders";
@@ -19,13 +20,14 @@ export default function App() {
       <Toaster richColors position="top-center" />
       <BrowserRouter>
         <Routes>
+          <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
-          <Route path="/shop" element={<RequireAuth><Pharmacy /></RequireAuth>} />
+          <Route path="/shop" element={<Pharmacy />} />
           <Route path="/pharmacies" element={<RequireAuth><Pharmacies /></RequireAuth>} />
           <Route path="/medicines" element={<RequireAuth><Medicines /></RequireAuth>} />
           <Route path="/orders" element={<RequireAuth><Orders /></RequireAuth>} />
           <Route path="/orders/:id" element={<RequireAuth><OrderDetail /></RequireAuth>} />
-          <Route path="*" element={<Navigate to="/shop" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>
