@@ -7,11 +7,18 @@ import { pharmaciesRouter } from "./routes/pharmacies.js";
 import { medicinesRouter } from "./routes/medicines.js";
 import { ordersRouter } from "./routes/orders.js";
 import { scanMedicineRouter } from "./routes/scanMedicine.js";
+import { galimoWebhookRouter } from "./routes/galimoWebhook.js";
 import { attachChat } from "./chat.js";
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(
+  express.json({
+    verify: (req, _res, buf) => {
+      (req as any).rawBody = buf;
+    },
+  })
+);
 
 app.get("/api/health", async (_req, res) => {
   await pool.query("SELECT 1");
@@ -23,6 +30,7 @@ app.use("/api/pharmacies", pharmaciesRouter);
 app.use("/api/medicines", medicinesRouter);
 app.use("/api/orders", ordersRouter);
 app.use("/api/scan-medicine", scanMedicineRouter);
+app.use("/api/auth/galimo-webhook", galimoWebhookRouter);
 
 const httpServer = createServer(app);
 attachChat(httpServer);
