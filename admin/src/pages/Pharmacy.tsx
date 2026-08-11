@@ -16,7 +16,7 @@ const pharmacyNet = (subtotal: number) => subtotal - galimoCommission(subtotal);
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast as sonner } from "sonner";
 import { formatGNF, generateOrderRef } from "../lib/pharmacy";
-import { api } from "../api";
+import { api, getToken } from "../api";
 
 import imgDoliprane from "../assets/meds/doliprane.jpg";
 import imgEfferalgan from "../assets/meds/efferalgan.jpg";
@@ -141,6 +141,41 @@ function defaultPriceFor(m: { id: string; category: Exclude<Category, "all"> }):
 }
 export function pharmacistPrice(m: Medicine): number {
   return typeof m.price === "number" ? m.price : defaultPriceFor(m);
+}
+
+// ============================================================
+// Mapping vers/depuis l'API réelle (backend/src/routes/medicines.ts)
+// ============================================================
+function apiMedicineToDemo(m: any): Medicine {
+  const category = (CATEGORIES.some((c) => c.id === m.category) ? m.category : "soins") as Exclude<Category, "all">;
+  const base = {
+    id: m.id,
+    emoji: CATEGORIES.find((c) => c.id === category)?.emoji ?? "💊",
+    image: m.image_url ?? undefined,
+    name: m.name,
+    dosage: m.form ?? "",
+    description: m.description ?? "",
+    category,
+    prescription: !!m.requires_prescription,
+    onOrder: false,
+    stock: (m.in_stock ? "high" : "out") as StockLevel,
+    price: typeof m.price === "number" ? m.price : Number(m.price),
+  };
+  return { ...base, indications: deriveIndications(base) };
+}
+
+function demoMedicineToApiBody(m: Medicine, pharmacyId: string) {
+  return {
+    pharmacyId,
+    name: m.name,
+    price: pharmacistPrice(m),
+    category: m.category,
+    form: m.dosage || undefined,
+    imageUrl: m.image || undefined,
+    description: m.description || undefined,
+    inStock: m.stock !== "out",
+    requiresPrescription: m.prescription,
+  };
 }
 
 // Indications dérivées automatiquement pour la recherche par mal / symptôme
@@ -782,16 +817,36 @@ export default function Pharmacy() {
   const [clientView, setClientView] = useState<ClientView>("home");
   const [pharmView, setPharmView] = useState<PharmView>("dashboard");
 
-  const [medicines, setMedicines] = useState<Medicine[]>(() => {
+  const [pharmacyId, setPharmacyId] = useState<string | null>(null);
+  const [medicines, setMedicines] = useState<Medicine[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const mine = getToken() ? await api<{ id: string }[]>("/pharmacies/mine").catch(() => []) : [];
+        if (mine[0]) {
+          setPharmacyId(mine[0].id);
+          return;
+        }
+        const all = await api<{ id: string }[]>("/pharmacies");
+        if (all[0]) setPharmacyId(all[0].id);
+      } catch {}
+    })();
+  }, []);
+
+  const refreshMedicines = async () => {
+    if (!pharmacyId) return;
     try {
-      const raw = localStorage.getItem("galimo.pharmacy.medicines");
-      if (raw) {
-        const parsed: Medicine[] = JSON.parse(raw);
-        return parsed.map((m) => ({ ...m, indications: m.indications?.length ? m.indications : deriveIndications(m) }));
-      }
+      const data = await api<any[]>(`/medicines?pharmacyId=${pharmacyId}`);
+      setMedicines(data.map(apiMedicineToDemo));
     } catch {}
-    return MOCK_MEDICINES.map((m) => ({ ...m, price: pharmacistPrice(m), indications: deriveIndications(m) }));
-  });
+  };
+
+  useEffect(() => {
+    refreshMedicines();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pharmacyId]);
+
   const [selectedMedicine, setSelectedMedicine] = useState<Medicine | null>(null);
   const [cart, setCart] = useState<CartLine[]>(() => {
     try {
@@ -816,9 +871,6 @@ export default function Pharmacy() {
   useEffect(() => {
     try { localStorage.setItem("galimo.pharmacy.orders", JSON.stringify(orders)); } catch {}
   }, [orders]);
-  useEffect(() => {
-    try { localStorage.setItem("galimo.pharmacy.medicines", JSON.stringify(medicines)); } catch {}
-  }, [medicines]);
   useEffect(() => {
     try { localStorage.setItem("galimo.pharmacy.cart", JSON.stringify(cart)); } catch {}
   }, [cart]);
@@ -945,6 +997,8 @@ export default function Pharmacy() {
           setOrders={setOrders}
           medicines={medicines}
           setMedicines={setMedicines}
+          pharmacyId={pharmacyId}
+          refreshMedicines={refreshMedicines}
           activeOrder={activePharmOrder}
           setActiveOrderId={setActivePharmOrderId}
           getMed={getMed}
@@ -1806,13 +1860,15 @@ function StatusBadge({ status }: { status: OrderStatus }) {
 // PHARMACIST AREA
 // ============================================================
 
-function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedicines, activeOrder, setActiveOrderId, getMed, requestPrescription }: {
+function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedicines, pharmacyId, refreshMedicines, activeOrder, setActiveOrderId, getMed, requestPrescription }: {
   view: PharmView;
   setView: (v: PharmView) => void;
   orders: Order[];
   setOrders: React.Dispatch<React.SetStateAction<Order[]>>;
   medicines: Medicine[];
   setMedicines: React.Dispatch<React.SetStateAction<Medicine[]>>;
+  pharmacyId: string | null;
+  refreshMedicines: () => Promise<void>;
   activeOrder: Order | null;
   setActiveOrderId: (id: string | null) => void;
   getMed: (id: string) => Medicine;
@@ -1863,6 +1919,8 @@ function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedici
         <PharmacistCatalogue
           medicines={medicines}
           setMedicines={setMedicines}
+          pharmacyId={pharmacyId}
+          refreshMedicines={refreshMedicines}
           onBack={() => setView("dashboard")}
         />
       )}
@@ -2261,9 +2319,11 @@ function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onRequestPresc
 }
 
 // ---------- Pharm 3: Catalogue ----------
-function PharmacistCatalogue({ medicines, setMedicines, onBack }: {
+function PharmacistCatalogue({ medicines, setMedicines, pharmacyId, refreshMedicines, onBack }: {
   medicines: Medicine[];
   setMedicines: React.Dispatch<React.SetStateAction<Medicine[]>>;
+  pharmacyId: string | null;
+  refreshMedicines: () => Promise<void>;
   onBack: () => void;
 }) {
   const [showAdd, setShowAdd] = useState(false);
@@ -2276,13 +2336,21 @@ function PharmacistCatalogue({ medicines, setMedicines, onBack }: {
     return g;
   }, [medicines]);
 
-  const cycleStock = (id: string) => {
+  const cycleStock = async (id: string) => {
     const cycle: StockLevel[] = ["high", "medium", "low", "out"];
-    setMedicines((p) => p.map((m) => {
-      if (m.id !== id) return m;
-      const idx = cycle.indexOf(m.stock);
-      return { ...m, stock: cycle[(idx + 1) % cycle.length] };
-    }));
+    const current = medicines.find((m) => m.id === id);
+    if (!current) return;
+    const idx = cycle.indexOf(current.stock);
+    const nextStock = cycle[(idx + 1) % cycle.length];
+    setMedicines((p) => p.map((m) => (m.id === id ? { ...m, stock: nextStock } : m)));
+    try {
+      await api(`/medicines/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ inStock: nextStock !== "out" }),
+      });
+    } catch (err) {
+      sonner.error("Stock non enregistré", { description: (err as Error).message });
+    }
   };
 
   return (
@@ -2342,24 +2410,43 @@ function PharmacistCatalogue({ medicines, setMedicines, onBack }: {
         <Plus className="h-6 w-6" />
       </button>
 
-      {(showAdd || editing) && (
+      {(showAdd || editing) && pharmacyId && (
         <MedicineFormModal
           initial={editing}
           onClose={() => { setShowAdd(false); setEditing(null); }}
-          onSave={(m) => {
-            if (editing) {
-              setMedicines((p) => p.map((x) => x.id === m.id ? m : x));
-              sonner.success("Médicament modifié", { description: m.name, duration: 2000 });
-            } else {
-              setMedicines((p) => [...p, m]);
-              sonner.success("Médicament ajouté ✓", { description: m.name, duration: 2000 });
+          onSave={async (m) => {
+            try {
+              if (editing) {
+                await api(`/medicines/${editing.id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify(demoMedicineToApiBody(m, pharmacyId)),
+                });
+                sonner.success("Médicament modifié", { description: m.name, duration: 2000 });
+              } else {
+                await api("/medicines", {
+                  method: "POST",
+                  body: JSON.stringify(demoMedicineToApiBody(m, pharmacyId)),
+                });
+                sonner.success("Médicament ajouté ✓", { description: m.name, duration: 2000 });
+              }
+              await refreshMedicines();
+              setShowAdd(false); setEditing(null);
+            } catch (err) {
+              sonner.error("Échec de l'enregistrement", { description: (err as Error).message });
             }
-            setShowAdd(false); setEditing(null);
           }}
-          onDelete={editing ? () => {
-            setMedicines((p) => p.filter((x) => x.id !== editing.id));
-            sonner.error("Médicament supprimé", { description: editing.name, duration: 2000 });
-            setEditing(null);
+          onDelete={editing ? async () => {
+            try {
+              await api(`/medicines/${editing.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ isActive: false }),
+              });
+              sonner.error("Médicament supprimé", { description: editing.name, duration: 2000 });
+              await refreshMedicines();
+              setEditing(null);
+            } catch (err) {
+              sonner.error("Échec de la suppression", { description: (err as Error).message });
+            }
           } : undefined}
         />
       )}

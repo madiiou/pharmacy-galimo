@@ -52,6 +52,7 @@ const medicineSchema = z.object({
   activeSubstance: z.string().optional(),
   inStock: z.boolean().default(true),
   requiresPrescription: z.boolean().default(false),
+  isActive: z.boolean().optional(),
 });
 
 // pharmacy_partner (sa propre pharmacie) ou admin: ajout d'un médicament
@@ -102,12 +103,14 @@ medicinesRouter.patch("/:id", requireAuth, requireRole("admin", "pharmacy_partne
        active_substance = COALESCE($10, active_substance),
        in_stock = COALESCE($11, in_stock),
        requires_prescription = COALESCE($12, requires_prescription),
+       is_active = COALESCE($13, is_active),
        updated_at = now()
-     WHERE id = $13
+     WHERE id = $14
      RETURNING *`,
     [m.name ?? null, m.price ?? null, m.originalPrice ?? null, m.category ?? null, m.form ?? null,
      m.laboratory ?? null, m.imageUrl ?? null, m.description ?? null, m.indication ?? null,
-     m.activeSubstance ?? null, m.inStock ?? null, m.requiresPrescription ?? null, req.params.id]
+     m.activeSubstance ?? null, m.inStock ?? null, m.requiresPrescription ?? null, m.isActive ?? null,
+     req.params.id]
   );
   res.json(result.rows[0]);
 });
