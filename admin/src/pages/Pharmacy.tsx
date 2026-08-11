@@ -817,6 +817,13 @@ export default function Pharmacy() {
   const [clientView, setClientView] = useState<ClientView>("home");
   const [pharmView, setPharmView] = useState<PharmView>("dashboard");
 
+  useEffect(() => {
+    if (mode === "pharmacien" && !getToken()) {
+      navigate("/login?redirect=" + encodeURIComponent("/shop?view=pharmacien"));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+
   const [pharmacyId, setPharmacyId] = useState<string | null>(null);
   const [medicines, setMedicines] = useState<Medicine[]>([]);
 

@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 
 export function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -14,7 +15,7 @@ export function Login() {
     setError(null);
     try {
       await login(email, password);
-      navigate("/pharmacies");
+      navigate(searchParams.get("redirect") || "/pharmacies");
     } catch (err) {
       setError((err as Error).message);
     }
