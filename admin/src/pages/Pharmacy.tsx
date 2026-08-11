@@ -804,7 +804,7 @@ export const GUINEA_CITIES = [
 // ============================================================
 
 type ClientView = "home" | "detail" | "cart" | "sent" | "response" | "history";
-type PharmView = "dashboard" | "order" | "catalogue" | "stats" | "hours";
+type PharmView = "dashboard" | "order" | "catalogue" | "stats" | "hours" | "phone_order";
 type Mode = "client" | "pharmacien";
 
 export default function Pharmacy() {
@@ -1902,6 +1902,7 @@ function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedici
           getMed={getMed}
           onOpen={(o) => { setActiveOrderId(o.id); setView("order"); }}
           onGoCatalogue={() => setView("catalogue")}
+          onGoPhoneOrder={() => setView("phone_order")}
           onMarkDelivered={(id) => {
             const o = orders.find((x) => x.id === id);
             setOrders((p) => p.map((x) => (x.id === id ? { ...x, status: "delivered" } : x)));
@@ -1941,6 +1942,14 @@ function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedici
           setMedicines={setMedicines}
           pharmacyId={pharmacyId}
           refreshMedicines={refreshMedicines}
+          onBack={() => setView("dashboard")}
+        />
+      )}
+      {view === "phone_order" && pharmacyId && (
+        <PhoneOrderCompose
+          medicines={medicines}
+          pharmacyId={pharmacyId}
+          onDone={() => setView("dashboard")}
           onBack={() => setView("dashboard")}
         />
       )}
@@ -1987,14 +1996,14 @@ function PharmTabBar({ view, setView, nouvelles }: { view: PharmView; setView: (
 }
 
 // ---------- Pharm 1: Dashboard ----------
-function PharmacistDashboard({ orders, getMed, onOpen, onGoCatalogue, onMarkDelivered }: {
+function PharmacistDashboard({ orders, getMed, onOpen, onGoCatalogue, onGoPhoneOrder, onMarkDelivered }: {
   orders: Order[];
   getMed: (id: string) => Medicine;
   onOpen: (o: Order) => void;
   onGoCatalogue: () => void;
+  onGoPhoneOrder: () => void;
   onMarkDelivered: (id: string) => void;
 }) {
-  const navigate = useNavigate();
   const [tab, setTab] = useState<"nouvelles" | "en_cours" | "terminees">("nouvelles");
   const nouvelles = orders.filter((o) => o.status === "pending_pharmacist");
   const enCours = orders.filter((o) => ["awaiting_client", "accepted", "ready"].includes(o.status));
@@ -2039,7 +2048,7 @@ function PharmacistDashboard({ orders, getMed, onOpen, onGoCatalogue, onMarkDeli
       )}
 
       <button
-        onClick={() => navigate("/orders/new")}
+        onClick={onGoPhoneOrder}
         className="ph-btn-primary fixed bottom-20 right-4 h-14 px-5 rounded-full flex items-center gap-2 shadow-2xl z-30"
       >
         <Phone className="h-4 w-4" />
@@ -2479,6 +2488,217 @@ function PharmacistCatalogue({ medicines, setMedicines, pharmacyId, refreshMedic
           } : undefined}
         />
       )}
+    </div>
+  );
+}
+
+// ---------- Commande téléphone (le pharmacien compose au nom du client) ----------
+function PhoneOrderCompose({ medicines, pharmacyId, onDone, onBack }: {
+  medicines: Medicine[];
+  pharmacyId: string;
+  onDone: () => void;
+  onBack: () => void;
+}) {
+  const [step, setStep] = useState<"customer" | "browse" | "cart">("customer");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [category, setCategory] = useState<Category>("all");
+  const [cart, setCart] = useState<CartLine[]>([]);
+  const [deliveryFee, setDeliveryFee] = useState("15000");
+  const [notes, setNotes] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const getMed = (id: string) => medicines.find((m) => m.id === id)!;
+  const filtered = category === "all" ? medicines : medicines.filter((m) => m.category === category);
+  const cartCount = cart.reduce((s, l) => s + l.quantity, 0);
+  const cartTotal = cart.reduce((s, l) => s + pharmacistPrice(getMed(l.medicineId)) * l.quantity, 0) + Number(deliveryFee || 0);
+
+  const addToCart = (id: string) => {
+    setCart((p) => {
+      const line = p.find((l) => l.medicineId === id);
+      if (line) return p.map((l) => (l.medicineId === id ? { ...l, quantity: l.quantity + 1 } : l));
+      return [...p, { medicineId: id, quantity: 1 }];
+    });
+  };
+  const updateQty = (id: string, qty: number) => {
+    setCart((p) => (qty <= 0 ? p.filter((l) => l.medicineId !== id) : p.map((l) => (l.medicineId === id ? { ...l, quantity: qty } : l))));
+  };
+
+  async function sendQuote() {
+    setSending(true);
+    try {
+      await api("/orders/manual", {
+        method: "POST",
+        body: JSON.stringify({
+          pharmacyId,
+          customerPhone,
+          customerName: customerName || undefined,
+          deliveryFee: Number(deliveryFee || 0),
+          notes: notes || undefined,
+          items: cart.map((l) => ({
+            medicineId: l.medicineId,
+            quantity: l.quantity,
+            unitPrice: pharmacistPrice(getMed(l.medicineId)),
+          })),
+        }),
+      });
+      sonner.success("Devis envoyé au client ✓", {
+        description: `${customerName || customerPhone} pourra le confirmer dans ses commandes.`,
+        duration: 3500,
+      });
+      onDone();
+    } catch (err) {
+      sonner.error("Échec de l'envoi", { description: (err as Error).message });
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const Header = ({ title, back }: { title: string; back: () => void }) => (
+    <div className="ph-gradient sticky top-0 z-40 text-white px-4 pt-4 pb-3 flex items-center gap-3">
+      <button onClick={back} className="h-9 w-9 rounded-full bg-white/15 backdrop-blur flex items-center justify-center active:scale-95">
+        <ArrowLeft className="h-4 w-4" />
+      </button>
+      <h1 className="ph-display font-bold text-lg">{title}</h1>
+    </div>
+  );
+
+  if (step === "customer") {
+    return (
+      <div className="min-h-screen pb-24">
+        <Header title="Commande téléphone" back={onBack} />
+        <div className="p-4 space-y-3">
+          <p className="text-sm text-[hsl(var(--ph-ink-soft))]">Coordonnées du client au téléphone</p>
+          <div>
+            <label className="text-xs font-semibold text-[hsl(var(--ph-ink-soft))]">Téléphone *</label>
+            <input
+              value={customerPhone}
+              onChange={(e) => setCustomerPhone(e.target.value)}
+              placeholder="+224 6XX XX XX XX"
+              className="ph-card w-full mt-1 px-3 py-2.5 text-sm outline-none"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-[hsl(var(--ph-ink-soft))]">Nom</label>
+            <input
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              placeholder="Nom du client"
+              className="ph-card w-full mt-1 px-3 py-2.5 text-sm outline-none"
+            />
+          </div>
+          <button
+            disabled={!customerPhone.trim()}
+            onClick={() => setStep("browse")}
+            className="ph-btn-primary w-full h-12 mt-2"
+          >
+            Continuer vers le catalogue
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === "browse") {
+    return (
+      <div className="min-h-screen pb-28">
+        <Header title={customerName || customerPhone} back={() => setStep("customer")} />
+        <div className="px-4 pt-3 flex gap-2 overflow-x-auto hide-scrollbar">
+          {CATEGORIES.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => setCategory(c.id)}
+              className={`ph-chip flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1 ${category === c.id ? "ph-chip-active" : ""}`}
+            >
+              <span>{c.emoji}</span>{c.label}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-3 p-4">
+          {filtered.map((m) => {
+            const line = cart.find((l) => l.medicineId === m.id);
+            return (
+              <div key={m.id} className="ph-card p-3">
+                <div className="h-20 rounded-xl bg-[hsl(var(--ph-purple)/0.08)] flex items-center justify-center overflow-hidden mb-2">
+                  {m.image ? <img src={m.image} alt={m.name} className="h-full w-full object-contain p-1" /> : <span className="text-2xl">{m.emoji}</span>}
+                </div>
+                <h4 className="text-sm font-semibold line-clamp-1">{m.name}</h4>
+                <p className="text-xs font-bold text-[hsl(var(--ph-purple))] mt-0.5">{formatGNF(pharmacistPrice(m))}</p>
+                {line ? (
+                  <div className="flex items-center justify-between mt-2">
+                    <button onClick={() => updateQty(m.id, line.quantity - 1)} className="h-7 w-7 rounded-full bg-[hsl(var(--ph-muted))] flex items-center justify-center"><Minus className="h-3 w-3" /></button>
+                    <span className="text-sm font-semibold">{line.quantity}</span>
+                    <button onClick={() => updateQty(m.id, line.quantity + 1)} className="h-7 w-7 rounded-full bg-[hsl(var(--ph-muted))] flex items-center justify-center"><Plus className="h-3 w-3" /></button>
+                  </div>
+                ) : (
+                  <button onClick={() => addToCart(m.id)} className="ph-btn-primary w-full h-8 text-xs mt-2">Ajouter</button>
+                )}
+              </div>
+            );
+          })}
+          {filtered.length === 0 && (
+            <p className="col-span-2 text-center text-sm text-[hsl(var(--ph-ink-soft))] py-10">Aucun médicament dans cette catégorie.</p>
+          )}
+        </div>
+        {cartCount > 0 && (
+          <button
+            onClick={() => setStep("cart")}
+            className="ph-btn-primary fixed bottom-4 left-4 right-4 h-14 rounded-full shadow-2xl z-30 flex items-center justify-between px-5"
+          >
+            <span className="text-sm font-semibold">{cartCount} article{cartCount > 1 ? "s" : ""}</span>
+            <span className="text-sm font-bold">Voir le panier →</span>
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen pb-28">
+      <Header title="Récapitulatif" back={() => setStep("browse")} />
+      <div className="p-4 space-y-3">
+        <div className="ph-card p-3 divide-y">
+          {cart.map((l) => {
+            const m = getMed(l.medicineId);
+            return (
+              <div key={l.medicineId} className="py-2 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium line-clamp-1">{m.name}</p>
+                  <p className="text-xs text-[hsl(var(--ph-ink-soft))]">{formatGNF(pharmacistPrice(m))} × {l.quantity}</p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button onClick={() => updateQty(l.medicineId, l.quantity - 1)} className="h-7 w-7 rounded-full bg-[hsl(var(--ph-muted))] flex items-center justify-center"><Minus className="h-3 w-3" /></button>
+                  <span className="text-sm font-semibold w-4 text-center">{l.quantity}</span>
+                  <button onClick={() => updateQty(l.medicineId, l.quantity + 1)} className="h-7 w-7 rounded-full bg-[hsl(var(--ph-muted))] flex items-center justify-center"><Plus className="h-3 w-3" /></button>
+                </div>
+              </div>
+            );
+          })}
+          {cart.length === 0 && <p className="py-6 text-center text-sm text-[hsl(var(--ph-ink-soft))]">Panier vide</p>}
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-[hsl(var(--ph-ink-soft))]">Frais de livraison (GNF)</label>
+          <input type="number" value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value)} className="ph-card w-full mt-1 px-3 py-2.5 text-sm outline-none" />
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-[hsl(var(--ph-ink-soft))]">Notes</label>
+          <input value={notes} onChange={(e) => setNotes(e.target.value)} className="ph-card w-full mt-1 px-3 py-2.5 text-sm outline-none" />
+        </div>
+
+        <div className="flex items-center justify-between ph-card p-3">
+          <span className="text-sm font-semibold">Total</span>
+          <span className="text-base font-bold text-[hsl(var(--ph-purple))]">{formatGNF(cartTotal)}</span>
+        </div>
+
+        <button
+          disabled={cart.length === 0 || sending}
+          onClick={sendQuote}
+          className="ph-btn-primary w-full h-12"
+        >
+          {sending ? "Envoi..." : "Envoyer le devis au client"}
+        </button>
+      </div>
     </div>
   );
 }
