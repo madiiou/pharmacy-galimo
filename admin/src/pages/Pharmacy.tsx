@@ -870,7 +870,7 @@ export default function Pharmacy() {
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch {}
-    return [seedOrder()];
+    return [];
   });
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
   const [activePharmOrderId, setActivePharmOrderId] = useState<string | null>(null);
@@ -885,7 +885,20 @@ export default function Pharmacy() {
   const activeOrder = orders.find((o) => o.id === activeOrderId) || null;
   const activePharmOrder = orders.find((o) => o.id === activePharmOrderId) || null;
 
-  const getMed = (id: string) => medicines.find((m) => m.id === id)!;
+  const getMed = (id: string): Medicine =>
+    medicines.find((m) => m.id === id) ?? {
+      id,
+      emoji: "❓",
+      name: "Article indisponible",
+      dosage: "",
+      description: "",
+      category: "soins",
+      prescription: false,
+      onOrder: false,
+      stock: "out",
+      price: 0,
+      indications: [],
+    };
 
   const addToCart = (id: string, qty = 1) => {
     setCart((prev) => {
