@@ -7,7 +7,7 @@ import { canManagePharmacy } from "./pharmacies.js";
 export const ordersRouter = Router();
 
 const ORDER_STATUSES = [
-  "awaiting_customer", "pending", "confirmed", "preparing", "delivering", "delivered", "cancelled",
+  "awaiting_pharmacist", "awaiting_customer", "pending", "confirmed", "preparing", "delivering", "delivered", "cancelled",
 ] as const;
 
 async function getAccessiblePharmacyIds(userId: string) {
@@ -83,6 +83,71 @@ ordersRouter.post("/", requireAuth, async (req, res) => {
 
     await client.query("COMMIT");
     res.status(201).json({ ...order, items: itemRows });
+  } catch (err: any) {
+    await client.query("ROLLBACK");
+    res.status(err.status ?? 500).json({ error: err.message ?? "Internal error" });
+  } finally {
+    client.release();
+  }
+});
+
+const requestOrderSchema = z.object({
+  pharmacyId: z.string().uuid(),
+  items: z.array(z.object({
+    medicineId: z.string().uuid(),
+    quantity: z.number().int().positive(),
+  })).min(1),
+  deliveryMode: z.enum(["retrait", "livraison"]),
+  city: z.string().optional(),
+  deliveryAddress: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+// Demande du client : il choisit des articles sans connaître le prix, le
+// pharmacien fixera les prix réels ensuite (esprit du module d'origine).
+ordersRouter.post("/request", requireAuth, async (req, res) => {
+  const parsed = requestOrderSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const { pharmacyId, items, deliveryMode, city, deliveryAddress, notes } = parsed.data;
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const pharmacy = await client.query(
+      "SELECT delivery_fee_gnf FROM pharmacies WHERE id = $1 AND is_active = true",
+      [pharmacyId]
+    );
+    if (!pharmacy.rowCount) throw { status: 404, message: "Pharmacy not found" };
+
+    const medicineIds = items.map((i) => i.medicineId);
+    const medicines = await client.query(
+      "SELECT id FROM medicines WHERE id = ANY($1) AND pharmacy_id = $2 AND is_active = true",
+      [medicineIds, pharmacyId]
+    );
+    if (medicines.rowCount !== medicineIds.length) {
+      throw { status: 400, message: "One or more medicines are invalid for this pharmacy" };
+    }
+
+    const deliveryFee = pharmacy.rows[0].delivery_fee_gnf as number;
+
+    const orderResult = await client.query(
+      `INSERT INTO orders (user_id, pharmacy_id, status, total_amount, delivery_fee, delivery_mode, city, delivery_address, notes)
+       VALUES ($1,$2,'awaiting_pharmacist',0,$3,$4,$5,$6,$7) RETURNING *`,
+      [req.user!.sub, pharmacyId, deliveryFee, deliveryMode, city ?? null, deliveryAddress ?? null, notes ?? null]
+    );
+    const order = orderResult.rows[0];
+
+    for (const item of items) {
+      await client.query(
+        `INSERT INTO order_items (order_id, medicine_id, quantity, unit_price, subtotal)
+         VALUES ($1,$2,$3,0,0)`,
+        [order.id, item.medicineId, item.quantity]
+      );
+    }
+
+    await client.query("COMMIT");
+    res.status(201).json(order);
   } catch (err: any) {
     await client.query("ROLLBACK");
     res.status(err.status ?? 500).json({ error: err.message ?? "Internal error" });
@@ -233,6 +298,78 @@ ordersRouter.patch("/:id/confirm", requireAuth, async (req, res) => {
     [order.id]
   );
   res.json(result.rows[0]);
+});
+
+const priceItemsSchema = z.object({
+  deliveryFee: z.number().int().nonnegative().optional(),
+  items: z.array(z.object({
+    id: z.string().uuid(),
+    available: z.boolean(),
+    unitPrice: z.number().int().nonnegative().optional(),
+  })).min(1),
+});
+
+// Le pharmacien fixe les prix réels (et la disponibilité) d'une demande
+// client, ce qui la transforme en devis prêt à être confirmé.
+ordersRouter.patch("/:id/price", requireAuth, requireRole("admin", "pharmacy_partner"), async (req, res) => {
+  const orderResult = await pool.query("SELECT * FROM orders WHERE id = $1", [req.params.id]);
+  if (!orderResult.rowCount) return res.status(404).json({ error: "Not found" });
+  const order = orderResult.rows[0];
+
+  const allowed = await canManagePharmacy(req.user!.sub, req.user!.role, order.pharmacy_id);
+  if (!allowed) return res.status(403).json({ error: "Forbidden" });
+  if (order.status !== "awaiting_pharmacist") {
+    return res.status(400).json({ error: "Order is not awaiting pharmacist pricing" });
+  }
+
+  const parsed = priceItemsSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const { deliveryFee, items } = parsed.data;
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    let anyAvailable = false;
+    for (const item of items) {
+      if (item.available) {
+        anyAvailable = true;
+        await client.query(
+          `UPDATE order_items SET is_available = true, unit_price = $1, subtotal = $1 * quantity
+           WHERE id = $2 AND order_id = $3`,
+          [item.unitPrice ?? 0, item.id, order.id]
+        );
+      } else {
+        await client.query(
+          `UPDATE order_items SET is_available = false, unit_price = 0, subtotal = 0
+           WHERE id = $1 AND order_id = $2`,
+          [item.id, order.id]
+        );
+      }
+    }
+
+    const totals = await client.query(
+      "SELECT COALESCE(SUM(subtotal), 0) AS sum FROM order_items WHERE order_id = $1",
+      [order.id]
+    );
+    const finalDeliveryFee = deliveryFee ?? order.delivery_fee;
+    const totalAmount = Number(totals.rows[0].sum) + finalDeliveryFee;
+    const newStatus = anyAvailable ? "awaiting_customer" : "cancelled";
+
+    const result = await client.query(
+      `UPDATE orders SET status = $1, total_amount = $2, delivery_fee = $3, updated_at = now()
+       WHERE id = $4 RETURNING *`,
+      [newStatus, totalAmount, finalDeliveryFee, order.id]
+    );
+
+    await client.query("COMMIT");
+    res.json(result.rows[0]);
+  } catch (err: any) {
+    await client.query("ROLLBACK");
+    res.status(err.status ?? 500).json({ error: err.message ?? "Internal error" });
+  } finally {
+    client.release();
+  }
 });
 
 const statusSchema = z.object({
