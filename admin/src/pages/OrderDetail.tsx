@@ -15,6 +15,7 @@ interface OrderItem {
 
 interface OrderDetailData {
   id: string;
+  user_id: string;
   status: string;
   payment_status: string;
   total_amount: number;
@@ -31,7 +32,7 @@ interface Message {
   created_at: string;
 }
 
-const STATUSES = ["pending", "confirmed", "preparing", "delivering", "delivered", "cancelled"];
+const STATUSES = ["awaiting_customer", "pending", "confirmed", "preparing", "delivering", "delivered", "cancelled"];
 
 export function OrderDetail() {
   const { id } = useParams<{ id: string }>();
@@ -67,6 +68,11 @@ export function OrderDetail() {
     }));
   }
 
+  async function confirmOrder() {
+    if (!id) return;
+    setOrder(await api(`/orders/${id}/confirm`, { method: "PATCH" }));
+  }
+
   function sendMessage(e: FormEvent) {
     e.preventDefault();
     if (!draft.trim() || !id) return;
@@ -87,9 +93,11 @@ export function OrderDetail() {
       <div className="bg-white p-4 rounded shadow mb-4">
         <div className="flex justify-between items-center mb-3">
           <span>Statut : <strong>{order.status}</strong></span>
-          <select value={order.status} onChange={(e) => updateStatus(e.target.value)} className="border rounded px-2 py-1">
-            {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
+          {(user?.role === "admin" || user?.role === "pharmacy_partner") && (
+            <select value={order.status} onChange={(e) => updateStatus(e.target.value)} className="border rounded px-2 py-1">
+              {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )}
         </div>
         <ul className="text-sm divide-y">
           {order.items.map((item) => (
@@ -100,6 +108,17 @@ export function OrderDetail() {
           ))}
         </ul>
         <p className="text-right font-medium mt-2">Total : {order.total_amount.toLocaleString()} GNF</p>
+
+        {order.status === "awaiting_customer" && user?.id === order.user_id && (
+          <div className="mt-4 border-t pt-4">
+            <p className="text-sm text-gray-600 mb-2">
+              Voici le devis préparé par la pharmacie. Confirmez pour valider la commande, puis réglez auprès de la pharmacie (mobile money ou espèces à la livraison).
+            </p>
+            <button onClick={confirmOrder} className="bg-green-600 text-white rounded px-4 py-2">
+              Confirmer la commande
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="bg-white p-4 rounded shadow">

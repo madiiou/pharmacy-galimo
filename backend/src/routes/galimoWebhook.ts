@@ -41,6 +41,25 @@ galimoWebhookRouter.post("/", async (req, res) => {
   const existing = await pool.query("SELECT * FROM users WHERE external_id = $1", [externalId]);
   let user = existing.rows[0];
 
+  // Un devis créé par téléphone avant la première connexion peut déjà avoir
+  // créé un compte "invité" (sans external_id) sous ce même numéro : on le
+  // rattache au lieu d'en créer un doublon, pour que ses commandes suivent.
+  if (!user && phone) {
+    const byPhone = await pool.query(
+      "SELECT * FROM users WHERE phone = $1 AND external_id IS NULL",
+      [phone]
+    );
+    if (byPhone.rowCount) {
+      const result = await pool.query(
+        `UPDATE users SET external_id = $1, email = COALESCE($2, email), display_name = COALESCE($3, display_name), updated_at = now()
+         WHERE id = $4
+         RETURNING *`,
+        [externalId, email ?? null, name ?? null, byPhone.rows[0].id]
+      );
+      user = result.rows[0];
+    }
+  }
+
   if (!user) {
     const result = await pool.query(
       `INSERT INTO users (external_id, email, display_name, phone, role)

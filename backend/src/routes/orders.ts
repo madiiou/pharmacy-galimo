@@ -6,7 +6,9 @@ import { canManagePharmacy } from "./pharmacies.js";
 
 export const ordersRouter = Router();
 
-const ORDER_STATUSES = ["pending", "confirmed", "preparing", "delivering", "delivered", "cancelled"] as const;
+const ORDER_STATUSES = [
+  "awaiting_customer", "pending", "confirmed", "preparing", "delivering", "delivered", "cancelled",
+] as const;
 
 async function getAccessiblePharmacyIds(userId: string) {
   const result = await pool.query("SELECT id FROM pharmacies WHERE owner_id = $1", [userId]);
@@ -89,6 +91,76 @@ ordersRouter.post("/", requireAuth, async (req, res) => {
   }
 });
 
+const manualOrderSchema = z.object({
+  pharmacyId: z.string().uuid(),
+  customerPhone: z.string().min(1),
+  customerName: z.string().optional(),
+  deliveryFee: z.number().int().nonnegative().default(0),
+  notes: z.string().optional(),
+  items: z.array(z.object({
+    medicineId: z.string().uuid().optional(),
+    itemName: z.string().optional(),
+    quantity: z.number().int().positive(),
+    unitPrice: z.number().int().nonnegative(),
+  }).refine((i) => i.medicineId || i.itemName, {
+    message: "medicineId or itemName is required",
+  })).min(1),
+});
+
+// Devis composé par le pharmacien pour un client au téléphone : rattaché à
+// son compte via son numéro, en attente de confirmation de sa part.
+ordersRouter.post("/manual", requireAuth, requireRole("admin", "pharmacy_partner"), async (req, res) => {
+  const parsed = manualOrderSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const { pharmacyId, customerPhone, customerName, deliveryFee, notes, items } = parsed.data;
+
+  const allowedPharmacy = await canManagePharmacy(req.user!.sub, req.user!.role, pharmacyId);
+  if (!allowedPharmacy) return res.status(403).json({ error: "Forbidden" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    let customer = (await client.query("SELECT * FROM users WHERE phone = $1", [customerPhone])).rows[0];
+    if (!customer) {
+      const placeholderEmail = `guest-${customerPhone.replace(/[^0-9]/g, "")}@pharmacy-galimo.local`;
+      const created = await client.query(
+        `INSERT INTO users (email, display_name, phone, role)
+         VALUES ($1, $2, $3, 'user') RETURNING *`,
+        [placeholderEmail, customerName ?? null, customerPhone]
+      );
+      customer = created.rows[0];
+    } else if (customerName && !customer.display_name) {
+      await client.query("UPDATE users SET display_name = $1 WHERE id = $2", [customerName, customer.id]);
+    }
+
+    const totalAmount = deliveryFee + items.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
+
+    const orderResult = await client.query(
+      `INSERT INTO orders (user_id, pharmacy_id, status, total_amount, delivery_fee, notes)
+       VALUES ($1,$2,'awaiting_customer',$3,$4,$5) RETURNING *`,
+      [customer.id, pharmacyId, totalAmount, deliveryFee, notes ?? null]
+    );
+    const order = orderResult.rows[0];
+
+    for (const item of items) {
+      await client.query(
+        `INSERT INTO order_items (order_id, medicine_id, item_name, quantity, unit_price, subtotal)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [order.id, item.medicineId ?? null, item.itemName ?? null, item.quantity, item.unitPrice, item.unitPrice * item.quantity]
+      );
+    }
+
+    await client.query("COMMIT");
+    res.status(201).json({ ...order, customer: { id: customer.id, phone: customer.phone, display_name: customer.display_name } });
+  } catch (err: any) {
+    await client.query("ROLLBACK");
+    res.status(err.status ?? 500).json({ error: err.message ?? "Internal error" });
+  } finally {
+    client.release();
+  }
+});
+
 // Liste des commandes visibles par l'utilisateur courant
 ordersRouter.get("/", requireAuth, async (req, res) => {
   const { sub, role } = req.user!;
@@ -122,8 +194,8 @@ ordersRouter.get("/:id", requireAuth, async (req, res) => {
   if (!allowed) return res.status(403).json({ error: "Forbidden" });
 
   const items = await pool.query(
-    `SELECT oi.*, m.name AS medicine_name
-     FROM order_items oi JOIN medicines m ON m.id = oi.medicine_id
+    `SELECT oi.*, COALESCE(m.name, oi.item_name) AS medicine_name
+     FROM order_items oi LEFT JOIN medicines m ON m.id = oi.medicine_id
      WHERE oi.order_id = $1`,
     [order.id]
   );
@@ -143,6 +215,24 @@ ordersRouter.get("/:id/messages", requireAuth, async (req, res) => {
     [req.params.id]
   );
   res.json(messages.rows);
+});
+
+// Le client confirme son devis reçu par téléphone
+ordersRouter.patch("/:id/confirm", requireAuth, async (req, res) => {
+  const orderResult = await pool.query("SELECT * FROM orders WHERE id = $1", [req.params.id]);
+  if (!orderResult.rowCount) return res.status(404).json({ error: "Not found" });
+  const order = orderResult.rows[0];
+
+  if (order.user_id !== req.user!.sub) return res.status(403).json({ error: "Forbidden" });
+  if (order.status !== "awaiting_customer") {
+    return res.status(400).json({ error: "Order is not awaiting confirmation" });
+  }
+
+  const result = await pool.query(
+    "UPDATE orders SET status = 'pending', updated_at = now() WHERE id = $1 RETURNING *",
+    [order.id]
+  );
+  res.json(result.rows[0]);
 });
 
 const statusSchema = z.object({

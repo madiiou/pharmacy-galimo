@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import { useAuth } from "../auth/AuthContext";
 import { Layout } from "../components/Layout";
 
 interface Order {
@@ -12,6 +13,7 @@ interface Order {
 }
 
 const STATUS_LABELS: Record<string, string> = {
+  awaiting_customer: "Devis envoyé",
   pending: "En attente",
   confirmed: "Confirmée",
   preparing: "Préparation",
@@ -21,6 +23,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export function Orders() {
+  const { user } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
 
   useEffect(() => {
@@ -29,7 +32,14 @@ export function Orders() {
 
   return (
     <Layout>
-      <h1 className="text-2xl font-semibold mb-4">Commandes</h1>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-2xl font-semibold">Commandes</h1>
+        {(user?.role === "admin" || user?.role === "pharmacy_partner") && (
+          <Link to="/orders/new" className="bg-green-600 text-white rounded px-4 py-2 text-sm">
+            + Devis téléphone
+          </Link>
+        )}
+      </div>
       <div className="grid gap-3">
         {orders.map((o) => (
           <Link key={o.id} to={`/orders/${o.id}`} className="bg-white p-4 rounded shadow flex justify-between hover:bg-gray-50">
