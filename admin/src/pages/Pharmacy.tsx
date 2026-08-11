@@ -1994,6 +1994,7 @@ function PharmacistDashboard({ orders, getMed, onOpen, onGoCatalogue, onMarkDeli
   onGoCatalogue: () => void;
   onMarkDelivered: (id: string) => void;
 }) {
+  const navigate = useNavigate();
   const [tab, setTab] = useState<"nouvelles" | "en_cours" | "terminees">("nouvelles");
   const nouvelles = orders.filter((o) => o.status === "pending_pharmacist");
   const enCours = orders.filter((o) => ["awaiting_client", "accepted", "ready"].includes(o.status));
@@ -2036,6 +2037,14 @@ function PharmacistDashboard({ orders, getMed, onOpen, onGoCatalogue, onMarkDeli
           ))}
         </div>
       )}
+
+      <button
+        onClick={() => navigate("/orders/new")}
+        className="ph-btn-primary fixed bottom-20 right-4 h-14 px-5 rounded-full flex items-center gap-2 shadow-2xl z-30"
+      >
+        <Phone className="h-4 w-4" />
+        <span className="text-sm font-semibold">Commande téléphone</span>
+      </button>
     </div>
   );
 }
