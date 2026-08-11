@@ -252,6 +252,7 @@ type OrderStatus =
 
 interface OrderItem {
   medicineId: string;
+  itemId?: string;   // id réel de la ligne côté API (order_items.id)
   quantity: number;
   isAvailable: boolean | null;   // null = pas encore répondu
   confirmedPrice: number | null;
@@ -272,6 +273,46 @@ interface Order {
   deliveryAddress?: string;
   prescriptionUrl?: string;
   prescriptionRequested?: boolean;
+}
+
+// ============================================================
+// Mapping des commandes vers/depuis l'API réelle (backend/src/routes/orders.ts)
+// ============================================================
+function apiOrderStatusToDemo(status: string): OrderStatus {
+  switch (status) {
+    case "awaiting_pharmacist": return "pending_pharmacist";
+    case "awaiting_customer": return "awaiting_client";
+    case "pending": return "accepted";
+    case "confirmed":
+    case "preparing":
+    case "delivering": return "ready";
+    case "delivered": return "delivered";
+    case "cancelled": return "cancelled";
+    default: return "pending_pharmacist";
+  }
+}
+
+function apiOrderToDemo(o: any): Order {
+  return {
+    id: o.id,
+    ref: o.id.slice(0, 8).toUpperCase(),
+    createdAt: new Date(o.created_at).getTime(),
+    expiresAt: new Date(o.created_at).getTime() + 30 * 60_000,
+    deliveryMode: (o.delivery_mode as "retrait" | "livraison") ?? "retrait",
+    deliveryFee: o.delivery_fee ?? null,
+    items: (o.items ?? []).map((it: any) => ({
+      medicineId: it.medicine_id ?? it.id,
+      itemId: it.id,
+      quantity: it.quantity,
+      isAvailable: it.is_available,
+      confirmedPrice: it.unit_price > 0 ? it.unit_price : null,
+    })),
+    status: apiOrderStatusToDemo(o.status),
+    clientName: o.customer_name ?? "Client",
+    clientPhone: o.customer_phone ?? "",
+    city: o.city ?? undefined,
+    deliveryAddress: o.delivery_address ?? undefined,
+  };
 }
 
 const MOCK_MEDICINES: Medicine[] = [
@@ -862,22 +903,23 @@ export default function Pharmacy() {
     } catch {}
     return [];
   });
-  const [orders, setOrders] = useState<Order[]>(() => {
-    try {
-      const raw = localStorage.getItem("galimo.pharmacy.orders");
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return [];
-  });
+  const [orders, setOrders] = useState<Order[]>([]);
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
   const [activePharmOrderId, setActivePharmOrderId] = useState<string | null>(null);
 
+  const refreshOrders = async () => {
+    if (!getToken()) return;
+    try {
+      const data = await api<any[]>("/orders");
+      setOrders(data.map(apiOrderToDemo));
+    } catch {}
+  };
+
   useEffect(() => {
-    try { localStorage.setItem("galimo.pharmacy.orders", JSON.stringify(orders)); } catch {}
-  }, [orders]);
+    refreshOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     try { localStorage.setItem("galimo.pharmacy.cart", JSON.stringify(cart)); } catch {}
   }, [cart]);
@@ -909,38 +951,38 @@ export default function Pharmacy() {
     sonner.success("Ajouté au panier", { description: getMed(id).name, duration: 1500 });
   };
 
-  const submitOrder = (payload: {
+  const submitOrder = async (payload: {
     deliveryMode: "retrait" | "livraison";
     city?: string;
     deliveryAddress?: string;
   }) => {
-    const newOrder: Order = {
-      id: crypto.randomUUID(),
-      ref: generateOrderRef(),
-      createdAt: Date.now(),
-      expiresAt: Date.now() + 30 * 60_000,
-      deliveryMode: payload.deliveryMode,
-      city: payload.city,
-      deliveryAddress: payload.deliveryAddress,
-      deliveryFee: null,
-      items: cart.map((c) => ({
-        medicineId: c.medicineId,
-        quantity: c.quantity,
-        isAvailable: null,
-        confirmedPrice: null,
-      })),
-      status: "pending_pharmacist",
-      clientName: "Vous",
-      clientPhone: "+224 620 00 00 00",
-    };
-    setOrders((p) => [newOrder, ...p]);
-    setActiveOrderId(newOrder.id);
-    setCart([]);
-    setClientView("sent");
-    sonner.success(`Commande envoyée #${newOrder.ref}`, {
-      description: "La pharmacienne va confirmer les prix sous 30 min.",
-      duration: 3500,
-    });
+    if (!getToken()) {
+      navigate("/login?redirect=" + encodeURIComponent("/shop"));
+      return;
+    }
+    if (!pharmacyId) return;
+    try {
+      const created = await api<any>("/orders/request", {
+        method: "POST",
+        body: JSON.stringify({
+          pharmacyId,
+          items: cart.map((c) => ({ medicineId: c.medicineId, quantity: c.quantity })),
+          deliveryMode: payload.deliveryMode,
+          city: payload.city,
+          deliveryAddress: payload.deliveryAddress,
+        }),
+      });
+      await refreshOrders();
+      setActiveOrderId(created.id);
+      setCart([]);
+      setClientView("sent");
+      sonner.success(`Commande envoyée #${created.id.slice(0, 8).toUpperCase()}`, {
+        description: "La pharmacienne va confirmer les prix sous 30 min.",
+        duration: 3500,
+      });
+    } catch (err) {
+      sonner.error("Échec de l'envoi", { description: (err as Error).message });
+    }
   };
 
   return (
@@ -987,26 +1029,35 @@ export default function Pharmacy() {
               duration: 3000,
             });
           }}
-          acceptOrder={(id) => {
+          acceptOrder={async (id) => {
             const o = orders.find((x) => x.id === id);
-            const isDelivery = o?.deliveryMode === "livraison";
-            setOrders((p) => p.map((o) => (o.id === id ? { ...o, status: isDelivery ? "ready" : "accepted" } : o)));
-            sonner.success("Paiement effectué ✓", {
-              description: isDelivery
-                ? `La pharmacienne va vous appeler pour vous mettre en relation avec le livreur et convenir du prix du transport.`
-                : o ? `Commande #${o.ref} payée via votre wallet.` : "Paiement réussi via votre wallet.",
-              duration: 5000,
-            });
-            setClientView("history");
+            try {
+              await api(`/orders/${id}/confirm`, { method: "PATCH" });
+              await refreshOrders();
+              sonner.success("Commande confirmée ✓", {
+                description: o?.deliveryMode === "livraison"
+                  ? "La pharmacienne va vous appeler pour convenir du prix du transport."
+                  : `Commande #${o?.ref} confirmée — réglez à la pharmacie.`,
+                duration: 5000,
+              });
+              setClientView("history");
+            } catch (err) {
+              sonner.error("Échec de la confirmation", { description: (err as Error).message });
+            }
           }}
-          cancelOrder={(id) => {
+          cancelOrder={async (id) => {
             const o = orders.find((x) => x.id === id);
-            setOrders((p) => p.map((o) => (o.id === id ? { ...o, status: "cancelled" } : o)));
-            sonner.error("Commande annulée", {
-              description: o ? `#${o.ref}` : undefined,
-              duration: 2500,
-            });
-            setClientView("history");
+            try {
+              await api(`/orders/${id}/cancel`, { method: "PATCH" });
+              await refreshOrders();
+              sonner.error("Commande annulée", {
+                description: o ? `#${o.ref}` : undefined,
+                duration: 2500,
+              });
+              setClientView("history");
+            } catch (err) {
+              sonner.error("Échec de l'annulation", { description: (err as Error).message });
+            }
           }}
         />
       ) : (
@@ -1019,6 +1070,7 @@ export default function Pharmacy() {
           setMedicines={setMedicines}
           pharmacyId={pharmacyId}
           refreshMedicines={refreshMedicines}
+          refreshOrders={refreshOrders}
           activeOrder={activePharmOrder}
           setActiveOrderId={setActivePharmOrderId}
           getMed={getMed}
@@ -1880,7 +1932,7 @@ function StatusBadge({ status }: { status: OrderStatus }) {
 // PHARMACIST AREA
 // ============================================================
 
-function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedicines, pharmacyId, refreshMedicines, activeOrder, setActiveOrderId, getMed, requestPrescription }: {
+function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedicines, pharmacyId, refreshMedicines, refreshOrders, activeOrder, setActiveOrderId, getMed, requestPrescription }: {
   view: PharmView;
   setView: (v: PharmView) => void;
   orders: Order[];
@@ -1889,6 +1941,7 @@ function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedici
   setMedicines: React.Dispatch<React.SetStateAction<Medicine[]>>;
   pharmacyId: string | null;
   refreshMedicines: () => Promise<void>;
+  refreshOrders: () => Promise<void>;
   activeOrder: Order | null;
   setActiveOrderId: (id: string | null) => void;
   getMed: (id: string) => Medicine;
@@ -1903,13 +1956,21 @@ function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedici
           onOpen={(o) => { setActiveOrderId(o.id); setView("order"); }}
           onGoCatalogue={() => setView("catalogue")}
           onGoPhoneOrder={() => setView("phone_order")}
-          onMarkDelivered={(id) => {
+          onMarkDelivered={async (id) => {
             const o = orders.find((x) => x.id === id);
-            setOrders((p) => p.map((x) => (x.id === id ? { ...x, status: "delivered" } : x)));
-            sonner.success("Commande livrée ✓", {
-              description: o ? `#${o.ref} marquée comme livrée.` : undefined,
-              duration: 2500,
-            });
+            try {
+              await api(`/orders/${id}/status`, {
+                method: "PATCH",
+                body: JSON.stringify({ status: "delivered" }),
+              });
+              await refreshOrders();
+              sonner.success("Commande livrée ✓", {
+                description: o ? `#${o.ref} marquée comme livrée.` : undefined,
+                duration: 2500,
+              });
+            } catch (err) {
+              sonner.error("Échec de la mise à jour", { description: (err as Error).message });
+            }
           }}
         />
       )}
@@ -1919,19 +1980,34 @@ function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedici
           getMed={getMed}
           onBack={() => setView("dashboard")}
           onRequestPrescription={() => requestPrescription(activeOrder.id)}
-          onSubmit={(updated) => {
-            setOrders((p) => p.map((o) => o.id === updated.id ? updated : o));
-            setView("dashboard");
-            if (updated.status === "cancelled") {
-              sonner.error(`Commande #${updated.ref} annulée`, {
-                description: "Aucun médicament disponible.",
-                duration: 3000,
+          onSubmit={async (updated) => {
+            try {
+              await api(`/orders/${updated.id}/price`, {
+                method: "PATCH",
+                body: JSON.stringify({
+                  deliveryFee: updated.deliveryFee ?? undefined,
+                  items: updated.items.map((i) => ({
+                    id: i.itemId,
+                    available: !!i.isAvailable,
+                    unitPrice: i.confirmedPrice ?? 0,
+                  })),
+                }),
               });
-            } else {
-              sonner.success(`Réponse envoyée au client ✓`, {
-                description: `Commande #${updated.ref} — en attente de paiement.`,
-                duration: 3000,
-              });
+              await refreshOrders();
+              setView("dashboard");
+              if (updated.items.every((i) => !i.isAvailable)) {
+                sonner.error(`Commande #${updated.ref} annulée`, {
+                  description: "Aucun médicament disponible.",
+                  duration: 3000,
+                });
+              } else {
+                sonner.success(`Réponse envoyée au client ✓`, {
+                  description: `Commande #${updated.ref} — en attente de paiement.`,
+                  duration: 3000,
+                });
+              }
+            } catch (err) {
+              sonner.error("Échec de l'envoi", { description: (err as Error).message });
             }
           }}
         />
@@ -1949,7 +2025,7 @@ function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedici
         <PhoneOrderCompose
           medicines={medicines}
           pharmacyId={pharmacyId}
-          onDone={() => setView("dashboard")}
+          onDone={async () => { await refreshOrders(); setView("dashboard"); }}
           onBack={() => setView("dashboard")}
         />
       )}

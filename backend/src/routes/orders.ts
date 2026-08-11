@@ -226,24 +226,37 @@ ordersRouter.post("/manual", requireAuth, requireRole("admin", "pharmacy_partner
   }
 });
 
+const ORDERS_WITH_ITEMS_SELECT = `
+  SELECT o.*, COALESCE(
+    (SELECT json_agg(json_build_object(
+       'id', oi.id, 'medicine_id', oi.medicine_id, 'quantity', oi.quantity,
+       'unit_price', oi.unit_price, 'subtotal', oi.subtotal, 'is_available', oi.is_available,
+       'medicine_name', COALESCE(m.name, oi.item_name)
+     ) ORDER BY oi.created_at)
+     FROM order_items oi LEFT JOIN medicines m ON m.id = oi.medicine_id
+     WHERE oi.order_id = o.id), '[]'::json
+  ) AS items
+  FROM orders o
+`;
+
 // Liste des commandes visibles par l'utilisateur courant
 ordersRouter.get("/", requireAuth, async (req, res) => {
   const { sub, role } = req.user!;
 
   if (role === "admin") {
-    const result = await pool.query("SELECT * FROM orders ORDER BY created_at DESC");
+    const result = await pool.query(`${ORDERS_WITH_ITEMS_SELECT} ORDER BY o.created_at DESC`);
     return res.json(result.rows);
   }
   if (role === "pharmacy_partner") {
     const pharmacyIds = await getAccessiblePharmacyIds(sub);
     const result = await pool.query(
-      "SELECT * FROM orders WHERE pharmacy_id = ANY($1) ORDER BY created_at DESC",
+      `${ORDERS_WITH_ITEMS_SELECT} WHERE o.pharmacy_id = ANY($1) ORDER BY o.created_at DESC`,
       [pharmacyIds]
     );
     return res.json(result.rows);
   }
   const result = await pool.query(
-    "SELECT * FROM orders WHERE user_id = $1 ORDER BY created_at DESC",
+    `${ORDERS_WITH_ITEMS_SELECT} WHERE o.user_id = $1 ORDER BY o.created_at DESC`,
     [sub]
   );
   res.json(result.rows);
@@ -295,6 +308,24 @@ ordersRouter.patch("/:id/confirm", requireAuth, async (req, res) => {
 
   const result = await pool.query(
     "UPDATE orders SET status = 'pending', updated_at = now() WHERE id = $1 RETURNING *",
+    [order.id]
+  );
+  res.json(result.rows[0]);
+});
+
+// Le client annule sa propre commande (avant confirmation ou paiement)
+ordersRouter.patch("/:id/cancel", requireAuth, async (req, res) => {
+  const orderResult = await pool.query("SELECT * FROM orders WHERE id = $1", [req.params.id]);
+  if (!orderResult.rowCount) return res.status(404).json({ error: "Not found" });
+  const order = orderResult.rows[0];
+
+  if (order.user_id !== req.user!.sub) return res.status(403).json({ error: "Forbidden" });
+  if (!["awaiting_pharmacist", "awaiting_customer"].includes(order.status)) {
+    return res.status(400).json({ error: "Order can no longer be cancelled" });
+  }
+
+  const result = await pool.query(
+    "UPDATE orders SET status = 'cancelled', updated_at = now() WHERE id = $1 RETURNING *",
     [order.id]
   );
   res.json(result.rows[0]);
