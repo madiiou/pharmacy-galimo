@@ -33,12 +33,18 @@ function verifySignature(req: import("express").Request): boolean {
 // (POST /orders/manual), donc un compte "invité" créé avant la première
 // connexion réelle est retrouvé ici directement, sans doublon.
 galimoWebhookRouter.post("/", async (req, res) => {
+  console.log(`[galimo-webhook] request from ${req.ip}, has-signature=${!!req.header("x-galimo-signature")}, body=${JSON.stringify(req.body)}`);
+
   if (!verifySignature(req)) {
+    console.log("[galimo-webhook] REJECTED: invalid or missing signature");
     return res.status(401).json({ error: "Invalid or missing signature" });
   }
 
   const parsed = payloadSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  if (!parsed.success) {
+    console.log(`[galimo-webhook] REJECTED: invalid payload ${JSON.stringify(parsed.error.flatten())}`);
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
   const { phone, email, name } = parsed.data;
 
   let user = (await pool.query("SELECT * FROM users WHERE phone = $1", [phone])).rows[0];
@@ -66,6 +72,7 @@ galimoWebhookRouter.post("/", async (req, res) => {
     user = result.rows[0];
   }
 
+  console.log(`[galimo-webhook] OK: user ${user.id} (phone ${phone})`);
   const token = signToken({ sub: user.id, role: user.role });
   res.json({
     token,
