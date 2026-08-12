@@ -8,6 +8,7 @@ import { Medicines } from "./pages/Medicines";
 import { Orders } from "./pages/Orders";
 import { OrderDetail } from "./pages/OrderDetail";
 import { ManualOrder } from "./pages/ManualOrder";
+import { Users } from "./pages/Users";
 import Pharmacy from "./pages/Pharmacy";
 import AdminPharmacies from "./pages/AdminPharmacies";
 
@@ -31,6 +32,7 @@ export default function App() {
           <Route path="/orders" element={<RequireAuth><Orders /></RequireAuth>} />
           <Route path="/orders/new" element={<RequireAuth><ManualOrder /></RequireAuth>} />
           <Route path="/orders/:id" element={<RequireAuth><OrderDetail /></RequireAuth>} />
+          <Route path="/users" element={<RequireAuth><Users /></RequireAuth>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
