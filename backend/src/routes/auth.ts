@@ -1,9 +1,20 @@
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db.js";
-import { hashPassword, comparePassword, signToken } from "../auth.js";
+import { hashPassword, comparePassword, signToken, requireAuth } from "../auth.js";
 
 export const authRouter = Router();
+
+// Retrouve les infos utilisateur à partir d'un token existant (utilisé quand
+// l'app galimo.tech ouvre une page pharmacie avec ?token=... dans l'URL).
+authRouter.get("/me", requireAuth, async (req, res) => {
+  const result = await pool.query(
+    "SELECT id, email, display_name, phone, role FROM users WHERE id = $1",
+    [req.user!.sub]
+  );
+  if (!result.rowCount) return res.status(404).json({ error: "Not found" });
+  res.json(result.rows[0]);
+});
 
 const registerSchema = z.object({
   email: z.string().email(),

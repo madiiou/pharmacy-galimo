@@ -86,6 +86,7 @@ galimoWebhookRouter.post("/", async (req, res) => {
     const token = signToken({ sub: user.id, role: user.role });
     res.json({
       token,
+      url: `https://pharmacy.galimo.tech/shop?token=${token}`,
       user: { id: user.id, email: user.email, display_name: user.display_name, phone: user.phone, role: user.role },
     });
   } catch (err: any) {
