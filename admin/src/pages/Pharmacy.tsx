@@ -2719,7 +2719,7 @@ function PhoneOrderCompose({ medicines, pharmacyId, onDone, onBack }: {
         {cartCount > 0 && (
           <button
             onClick={() => setStep("cart")}
-            className="ph-btn-primary fixed bottom-4 left-4 right-4 h-14 rounded-full shadow-2xl z-30 flex items-center justify-between px-5"
+            className="ph-btn-primary fixed bottom-20 left-4 right-4 h-14 rounded-full shadow-2xl z-40 flex items-center justify-between px-5"
           >
             <span className="text-sm font-semibold">{cartCount} article{cartCount > 1 ? "s" : ""}</span>
             <span className="text-sm font-bold">Voir le panier →</span>
