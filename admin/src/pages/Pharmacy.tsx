@@ -14,6 +14,7 @@ const GALIMO_COMMISSION_RATE = 0.10;
 const galimoCommission = (subtotal: number) => Math.round(subtotal * GALIMO_COMMISSION_RATE);
 const pharmacyNet = (subtotal: number) => subtotal - galimoCommission(subtotal);
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { io } from "socket.io-client";
 import { toast as sonner } from "sonner";
 import { formatGNF, generateOrderRef } from "../lib/pharmacy";
 import { api, getToken } from "../api";
@@ -917,9 +918,21 @@ export default function Pharmacy() {
 
   useEffect(() => {
     refreshOrders();
-    if (!getToken()) return;
-    const interval = setInterval(refreshOrders, 5000);
-    return () => clearInterval(interval);
+    const token = getToken();
+    if (!token) return;
+
+    // Temps réel : le serveur prévient dès qu'une commande change (nouvelle
+    // demande, prix fixés, confirmation...) au lieu d'être sondé en boucle.
+    const socket = io(import.meta.env.VITE_API_URL ?? "/", {
+      path: "/api/socket.io",
+      auth: { token },
+    });
+    socket.on("orders_updated", refreshOrders);
+    socket.on("connect", refreshOrders);
+
+    return () => {
+      socket.disconnect();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

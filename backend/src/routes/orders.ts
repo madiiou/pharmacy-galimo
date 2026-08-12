@@ -3,6 +3,7 @@ import { z } from "zod";
 import { pool } from "../db.js";
 import { requireAuth, requireRole } from "../auth.js";
 import { canManagePharmacy } from "./pharmacies.js";
+import { notifyOrderChange } from "../chat.js";
 
 export const ordersRouter = Router();
 
@@ -82,6 +83,7 @@ ordersRouter.post("/", requireAuth, async (req, res) => {
     }
 
     await client.query("COMMIT");
+    notifyOrderChange(order);
     res.status(201).json({ ...order, items: itemRows });
   } catch (err: any) {
     await client.query("ROLLBACK");
@@ -147,6 +149,7 @@ ordersRouter.post("/request", requireAuth, async (req, res) => {
     }
 
     await client.query("COMMIT");
+    notifyOrderChange(order);
     res.status(201).json(order);
   } catch (err: any) {
     await client.query("ROLLBACK");
@@ -217,6 +220,7 @@ ordersRouter.post("/manual", requireAuth, requireRole("admin", "pharmacy_partner
     }
 
     await client.query("COMMIT");
+    notifyOrderChange(order);
     res.status(201).json({ ...order, customer: { id: customer.id, phone: customer.phone, display_name: customer.display_name } });
   } catch (err: any) {
     await client.query("ROLLBACK");
@@ -310,6 +314,7 @@ ordersRouter.patch("/:id/confirm", requireAuth, async (req, res) => {
     "UPDATE orders SET status = 'pending', updated_at = now() WHERE id = $1 RETURNING *",
     [order.id]
   );
+  notifyOrderChange(result.rows[0]);
   res.json(result.rows[0]);
 });
 
@@ -328,6 +333,7 @@ ordersRouter.patch("/:id/cancel", requireAuth, async (req, res) => {
     "UPDATE orders SET status = 'cancelled', updated_at = now() WHERE id = $1 RETURNING *",
     [order.id]
   );
+  notifyOrderChange(result.rows[0]);
   res.json(result.rows[0]);
 });
 
@@ -394,6 +400,7 @@ ordersRouter.patch("/:id/price", requireAuth, requireRole("admin", "pharmacy_par
     );
 
     await client.query("COMMIT");
+    notifyOrderChange(result.rows[0]);
     res.json(result.rows[0]);
   } catch (err: any) {
     await client.query("ROLLBACK");
@@ -430,5 +437,6 @@ ordersRouter.patch("/:id/status", requireAuth, requireRole("admin", "pharmacy_pa
      RETURNING *`,
     [status ?? null, paymentStatus ?? null, order.id]
   );
+  notifyOrderChange(result.rows[0]);
   res.json(result.rows[0]);
 });

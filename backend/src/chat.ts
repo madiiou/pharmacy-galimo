@@ -7,6 +7,20 @@ import { canManagePharmacy } from "./routes/pharmacies.js";
 
 const JWT_SECRET = process.env.JWT_SECRET as string;
 
+let ioInstance: Server | null = null;
+
+// Prévient en direct les personnes concernées par une commande (le client,
+// la pharmacie, et les admins) qu'il y a du nouveau, pour qu'elles
+// rafraîchissent sans avoir besoin de sonder le serveur en boucle.
+export function notifyOrderChange(order: { user_id: string; pharmacy_id: string }) {
+  if (!ioInstance) return;
+  ioInstance
+    .to(`user:${order.user_id}`)
+    .to(`pharmacy:${order.pharmacy_id}`)
+    .to("admin")
+    .emit("orders_updated");
+}
+
 async function canAccessOrder(userId: string, role: string, orderId: string) {
   const result = await pool.query(
     "SELECT user_id, pharmacy_id FROM orders WHERE id = $1",
@@ -22,6 +36,7 @@ async function canAccessOrder(userId: string, role: string, orderId: string) {
 
 export function attachChat(httpServer: HttpServer) {
   const io = new Server(httpServer, { path: "/api/socket.io", cors: { origin: "*" } });
+  ioInstance = io;
 
   io.use((socket, next) => {
     try {
@@ -34,8 +49,19 @@ export function attachChat(httpServer: HttpServer) {
     }
   });
 
-  io.on("connection", (socket) => {
+  io.on("connection", async (socket) => {
     const user = socket.data.user as JwtPayload;
+
+    // Chaque connecté rejoint sa propre room, plus celle(s) de sa pharmacie
+    // s'il est partenaire, ou la room admin s'il est admin — ça permet à
+    // notifyOrderChange de cibler exactement qui doit être notifié.
+    socket.join(`user:${user.sub}`);
+    if (user.role === "admin") {
+      socket.join("admin");
+    } else if (user.role === "pharmacy_partner") {
+      const result = await pool.query("SELECT id FROM pharmacies WHERE owner_id = $1", [user.sub]);
+      for (const row of result.rows) socket.join(`pharmacy:${row.id}`);
+    }
 
     socket.on("join_order", async (orderId: string) => {
       if (await canAccessOrder(user.sub, user.role, orderId)) {
