@@ -7,10 +7,9 @@ import { signToken } from "../auth.js";
 export const galimoWebhookRouter = Router();
 
 const payloadSchema = z.object({
-  id: z.string().min(1),
+  phone: z.string().min(1),
   email: z.string().email().optional(),
   name: z.string().optional(),
-  phone: z.string().optional(),
 });
 
 function verifySignature(req: import("express").Request): boolean {
@@ -29,6 +28,10 @@ function verifySignature(req: import("express").Request): boolean {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+// Le téléphone est l'identifiant unique côté galimo.tech. C'est la même clé
+// que celle déjà utilisée pour rattacher les devis composés par téléphone
+// (POST /orders/manual), donc un compte "invité" créé avant la première
+// connexion réelle est retrouvé ici directement, sans doublon.
 galimoWebhookRouter.post("/", async (req, res) => {
   if (!verifySignature(req)) {
     return res.status(401).json({ error: "Invalid or missing signature" });
@@ -36,48 +39,29 @@ galimoWebhookRouter.post("/", async (req, res) => {
 
   const parsed = payloadSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const { id: externalId, email, name, phone } = parsed.data;
+  const { phone, email, name } = parsed.data;
 
-  const existing = await pool.query("SELECT * FROM users WHERE external_id = $1", [externalId]);
-  let user = existing.rows[0];
-
-  // Un devis créé par téléphone avant la première connexion peut déjà avoir
-  // créé un compte "invité" (sans external_id) sous ce même numéro : on le
-  // rattache au lieu d'en créer un doublon, pour que ses commandes suivent.
-  if (!user && phone) {
-    const byPhone = await pool.query(
-      "SELECT * FROM users WHERE phone = $1 AND external_id IS NULL",
-      [phone]
-    );
-    if (byPhone.rowCount) {
-      const result = await pool.query(
-        `UPDATE users SET external_id = $1, email = COALESCE($2, email), display_name = COALESCE($3, display_name), updated_at = now()
-         WHERE id = $4
-         RETURNING *`,
-        [externalId, email ?? null, name ?? null, byPhone.rows[0].id]
-      );
-      user = result.rows[0];
-    }
-  }
+  let user = (await pool.query("SELECT * FROM users WHERE phone = $1", [phone])).rows[0];
 
   if (!user) {
+    const placeholderEmail = email ?? `guest-${phone.replace(/[^0-9]/g, "")}@galimo.tech`;
     const result = await pool.query(
       `INSERT INTO users (external_id, email, display_name, phone, role)
        VALUES ($1, $2, $3, $4, 'user')
        RETURNING *`,
-      [externalId, email ?? `${externalId}@galimo.tech`, name ?? null, phone ?? null]
+      [phone, placeholderEmail, name ?? null, phone]
     );
     user = result.rows[0];
-  } else if (email || name || phone) {
+  } else if (email || name) {
     const result = await pool.query(
       `UPDATE users SET
          email = COALESCE($1, email),
          display_name = COALESCE($2, display_name),
-         phone = COALESCE($3, phone),
+         external_id = COALESCE(external_id, $3),
          updated_at = now()
        WHERE id = $4
        RETURNING *`,
-      [email ?? null, name ?? null, phone ?? null, user.id]
+      [email ?? null, name ?? null, phone, user.id]
     );
     user = result.rows[0];
   }
