@@ -11,6 +11,16 @@ import { galimoWebhookRouter } from "./routes/galimoWebhook.js";
 import { usersRouter } from "./routes/users.js";
 import { attachChat } from "./chat.js";
 
+// Filet de sécurité : une erreur non attrapée dans une route (ex: contrainte
+// SQL violée) ne doit plus jamais faire tomber tout le serveur et provoquer
+// des 502 pour tout le monde le temps du redémarrage du conteneur.
+process.on("unhandledRejection", (err) => {
+  console.error("[unhandledRejection]", err);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[uncaughtException]", err);
+});
+
 const app = express();
 app.use(cors());
 app.use(
@@ -33,6 +43,11 @@ app.use("/api/orders", ordersRouter);
 app.use("/api/scan-medicine", scanMedicineRouter);
 app.use("/api/auth/galimo-webhook", galimoWebhookRouter);
 app.use("/api/users", usersRouter);
+
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error("[express error handler]", err);
+  res.status(500).json({ error: "Internal error" });
+});
 
 const httpServer = createServer(app);
 attachChat(httpServer);

@@ -47,35 +47,49 @@ galimoWebhookRouter.post("/", async (req, res) => {
   }
   const { phone, email, name } = parsed.data;
 
-  let user = (await pool.query("SELECT * FROM users WHERE phone = $1", [phone])).rows[0];
+  try {
+    let user = (await pool.query("SELECT * FROM users WHERE phone = $1", [phone])).rows[0];
 
-  if (!user) {
-    const placeholderEmail = email ?? `guest-${phone.replace(/[^0-9]/g, "")}@galimo.tech`;
-    const result = await pool.query(
-      `INSERT INTO users (external_id, email, display_name, phone, role)
-       VALUES ($1, $2, $3, $4, 'user')
-       RETURNING *`,
-      [phone, placeholderEmail, name ?? null, phone]
-    );
-    user = result.rows[0];
-  } else if (email || name) {
-    const result = await pool.query(
-      `UPDATE users SET
-         email = COALESCE($1, email),
-         display_name = COALESCE($2, display_name),
-         external_id = COALESCE(external_id, $3),
-         updated_at = now()
-       WHERE id = $4
-       RETURNING *`,
-      [email ?? null, name ?? null, phone, user.id]
-    );
-    user = result.rows[0];
+    // Le même compte peut déjà exister sous un autre téléphone si l'email
+    // envoyé correspond à un utilisateur existant (email est unique chez
+    // nous) : on le retrouve par email plutôt que de tenter une création
+    // qui violerait la contrainte d'unicité.
+    if (!user && email) {
+      user = (await pool.query("SELECT * FROM users WHERE email = $1", [email])).rows[0];
+    }
+
+    if (!user) {
+      const placeholderEmail = email ?? `guest-${phone.replace(/[^0-9]/g, "")}@galimo.tech`;
+      const result = await pool.query(
+        `INSERT INTO users (external_id, email, display_name, phone, role)
+         VALUES ($1, $2, $3, $4, 'user')
+         RETURNING *`,
+        [phone, placeholderEmail, name ?? null, phone]
+      );
+      user = result.rows[0];
+    } else {
+      const result = await pool.query(
+        `UPDATE users SET
+           email = COALESCE($1, email),
+           display_name = COALESCE($2, display_name),
+           phone = COALESCE(phone, $3),
+           external_id = COALESCE(external_id, $3),
+           updated_at = now()
+         WHERE id = $4
+         RETURNING *`,
+        [email ?? null, name ?? null, phone, user.id]
+      );
+      user = result.rows[0];
+    }
+
+    console.log(`[galimo-webhook] OK: user ${user.id} (phone ${phone})`);
+    const token = signToken({ sub: user.id, role: user.role });
+    res.json({
+      token,
+      user: { id: user.id, email: user.email, display_name: user.display_name, phone: user.phone, role: user.role },
+    });
+  } catch (err: any) {
+    console.error(`[galimo-webhook] ERROR: ${err?.message ?? err}`);
+    res.status(500).json({ error: "Internal error" });
   }
-
-  console.log(`[galimo-webhook] OK: user ${user.id} (phone ${phone})`);
-  const token = signToken({ sub: user.id, role: user.role });
-  res.json({
-    token,
-    user: { id: user.id, email: user.email, display_name: user.display_name, phone: user.phone, role: user.role },
-  });
 });
