@@ -3,7 +3,7 @@ import {
   ArrowLeft, Search, ShoppingCart, Plus, Minus, Trash2, Check, X,
   Phone, Clock, Package, Store, ClipboardList, ChevronRight, Bell,
   MapPin, AlertCircle, CheckCircle2, Sparkles, Pill, Edit3, Upload, Loader2,
-  RotateCcw, BarChart3, Printer, CalendarClock, TrendingUp, AlertTriangle,
+  RotateCcw, BarChart3, Printer, CalendarClock, TrendingUp, AlertTriangle, Wallet,
 } from "lucide-react";
 import jsPDF from "jspdf";
 
@@ -3271,6 +3271,22 @@ function PharmacistStats({ orders, medicines, getMed }: {
   medicines: Medicine[];
   getMed: (id: string) => Medicine;
 }) {
+  const [galimoBalance, setGalimoBalance] = useState<any>(null);
+  const [galimoHistory, setGalimoHistory] = useState<any[]>([]);
+  const [galimoError, setGalimoError] = useState<string | null>(null);
+
+  useEffect(() => {
+    Promise.all([
+      api<any>("/galimo-partner/balance"),
+      api<any>("/galimo-partner/history?page=1&limit=10"),
+    ])
+      .then(([b, h]) => {
+        setGalimoBalance(b.info ?? b);
+        setGalimoHistory(h.info?.transactions ?? []);
+      })
+      .catch((err) => setGalimoError(err.message));
+  }, []);
+
   const stats = useMemo(() => {
     const now = Date.now();
     const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
@@ -3343,6 +3359,56 @@ function PharmacistStats({ orders, medicines, getMed }: {
         <RevenueCard label="Aujourd'hui" value={stats.caDay} count={stats.ordersCount.day} tone="purple" />
         <RevenueCard label="Cette semaine" value={stats.caWeek} count={stats.ordersCount.week} tone="emerald" />
         <RevenueCard label="Ce mois" value={stats.caMonth} count={stats.ordersCount.month} tone="amber" />
+      </div>
+
+      <div className="ph-card p-4 mb-4">
+        <h2 className="ph-display font-semibold text-sm flex items-center gap-2 mb-3">
+          <Wallet className="h-4 w-4 text-[hsl(var(--ph-purple))]" /> Solde Galimo
+        </h2>
+        {galimoError ? (
+          <p className="text-xs text-red-600">Impossible de récupérer le solde ({galimoError}).</p>
+        ) : !galimoBalance ? (
+          <div className="flex items-center gap-2 text-xs text-[hsl(var(--ph-ink-soft))]">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Chargement du solde…
+          </div>
+        ) : (
+          <>
+            <div className="rounded-xl bg-[hsl(var(--ph-purple)/0.08)] p-3 mb-3">
+              <p className="text-[10px] font-semibold text-[hsl(var(--ph-ink-soft))] uppercase tracking-wide">
+                Solde disponible
+              </p>
+              <p className="text-2xl font-bold text-[hsl(var(--ph-purple))] mt-1">
+                {Number(galimoBalance.solde ?? 0).toLocaleString("fr-FR")}{" "}
+                <span className="text-sm font-semibold">{galimoBalance.devise ?? "GNF"}</span>
+              </p>
+              {galimoBalance.lastupdate && (
+                <p className="text-[10px] text-[hsl(var(--ph-ink-soft))] mt-1">
+                  Mis à jour : {new Date(galimoBalance.lastupdate).toLocaleString("fr-FR")}
+                </p>
+              )}
+            </div>
+            <p className="text-xs font-semibold text-[hsl(var(--ph-ink-soft))] mb-2">Dernières transactions</p>
+            {galimoHistory.length === 0 ? (
+              <p className="text-xs text-[hsl(var(--ph-ink-soft))]">Aucune transaction pour le moment.</p>
+            ) : (
+              <div className="space-y-2">
+                {galimoHistory.slice(0, 10).map((tx, idx) => (
+                  <div key={tx.id ?? tx.reference ?? idx} className="flex items-center justify-between bg-[hsl(var(--ph-muted))] rounded-lg px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold truncate">{tx.description ?? tx.reference ?? "Transaction"}</p>
+                      <p className="text-[10px] text-[hsl(var(--ph-ink-soft))]">
+                        {tx.date || tx.created_at ? new Date(tx.date ?? tx.created_at).toLocaleString("fr-FR") : ""}
+                      </p>
+                    </div>
+                    <span className="text-xs font-bold text-[hsl(var(--ph-ink-soft))] shrink-0 ml-2">
+                      {Number(tx.montant ?? tx.amount ?? 0).toLocaleString("fr-FR")} {galimoBalance.devise ?? "GNF"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       <div className="ph-card p-4 mb-4">
