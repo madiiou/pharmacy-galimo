@@ -16,8 +16,8 @@ export function GalimoBalance() {
       api<any>("/galimo-partner/history?page=1&limit=30"),
     ])
       .then(([b, h]) => {
-        setBalance(b);
-        setHistory(Array.isArray(h) ? h : h.data ?? h.history ?? h.items ?? []);
+        setBalance(b.info ?? b);
+        setHistory(h.info?.transactions ?? []);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -39,7 +39,9 @@ export function GalimoBalance() {
 
       {balance && (
         <div className="bg-white p-4 rounded shadow mb-6">
-          <pre className="text-sm overflow-x-auto">{JSON.stringify(balance, null, 2)}</pre>
+          <p className="text-sm text-gray-500">Solde disponible</p>
+          <p className="text-3xl font-bold">{Number(balance.solde ?? 0).toLocaleString()} {balance.devise ?? "GNF"}</p>
+          <p className="text-xs text-gray-400 mt-1">Mis à jour le {balance.lastupdate ?? "—"}</p>
         </div>
       )}
 
