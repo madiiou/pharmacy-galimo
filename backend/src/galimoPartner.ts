@@ -60,6 +60,28 @@ export async function requestDebit(params: {
   return { idrequest: data.idrequest, status: data.status };
 }
 
+export async function getBalance() {
+  const resp = await fetch(`${BASE_URL}/partner/balance`, {
+    headers: await partnerHeaders(),
+  });
+  const data = await resp.json();
+  if (!resp.ok || data.error) {
+    throw new Error(data.error_code || data.error || `balance check failed: ${resp.status}`);
+  }
+  return data;
+}
+
+export async function getHistory(page: number, limit: number) {
+  const resp = await fetch(`${BASE_URL}/partner/history?page=${page}&limit=${limit}`, {
+    headers: await partnerHeaders(),
+  });
+  const data = await resp.json();
+  if (!resp.ok || data.error) {
+    throw new Error(data.error_code || data.error || `history fetch failed: ${resp.status}`);
+  }
+  return data;
+}
+
 export async function getTransactionStatus(reference: string) {
   const resp = await fetch(`${BASE_URL}/partner/transaction/status/${reference}`, {
     headers: await partnerHeaders(),

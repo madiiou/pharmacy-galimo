@@ -14,6 +14,7 @@ export function Layout({ children }: { children: ReactNode }) {
           <Link to="/medicines">Médicaments</Link>
           <Link to="/orders">Commandes</Link>
           {user?.role === "admin" && <Link to="/users">Utilisateurs</Link>}
+          {user?.role === "admin" && <Link to="/galimo-balance">Solde Galimo</Link>}
         </div>
         <div className="flex items-center gap-3 text-sm text-gray-600">
           <span>{user?.email} ({user?.role})</span>
