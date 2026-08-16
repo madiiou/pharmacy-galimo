@@ -1676,6 +1676,7 @@ function OrderSent({ order, onSeeResponse, onGoHome, onUploadPrescription }: {
   const currentIdx =
     order.status === "pending_pharmacist" ? 1 :
     order.status === "awaiting_client" ? 2 :
+    order.status === "accepted" && order.paymentStatus !== "paid" ? 2 :
     order.status === "accepted" ? 3 :
     order.status === "ready" || order.status === "delivered" ? 4 : 0;
 
@@ -1914,7 +1915,7 @@ function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onBack }:
              <button onClick={() => onOpen(o)} className="w-full text-left active:scale-[0.99] transition">
               <div className="flex items-center justify-between mb-2">
                 <span className="ph-display font-bold text-sm">#{o.ref}</span>
-                <StatusBadge status={o.status} />
+                <StatusBadge status={o.status} paymentStatus={o.paymentStatus} />
               </div>
               <p className="text-xs text-[hsl(var(--ph-ink-soft))] line-clamp-1">
                 {o.items.map((i) => getMed(i.medicineId).name).join(", ")}
@@ -1956,7 +1957,14 @@ function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onBack }:
   );
 }
 
-function StatusBadge({ status }: { status: OrderStatus }) {
+function StatusBadge({ status, paymentStatus }: { status: OrderStatus; paymentStatus?: string }) {
+  if ((status === "accepted" || status === "ready") && paymentStatus !== "paid") {
+    if (paymentStatus === "processing") {
+      return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">⏳ En attente de paiement</span>;
+    }
+    return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">Paiement refusé</span>;
+  }
+
   const map: Record<OrderStatus, { label: string; cls: string }> = {
     pending_pharmacist: { label: "En attente", cls: "bg-amber-100 text-amber-700" },
     awaiting_client:    { label: "Confirmée",  cls: "bg-blue-100 text-blue-700" },
@@ -2128,7 +2136,7 @@ function PharmacistDashboard({ orders, getMed, onOpen, onGoCatalogue, onGoPhoneO
   const terminees = orders.filter((o) => ["delivered", "cancelled", "expired"].includes(o.status));
 
   const gainToday = orders
-    .filter((o) => ["accepted", "ready", "delivered"].includes(o.status))
+    .filter((o) => o.paymentStatus === "paid")
     .reduce((s, o) => s + o.items.reduce((a, i) => a + (i.confirmedPrice || 0) * i.quantity, 0) + (o.deliveryFee || 0), 0);
 
   const list = tab === "nouvelles" ? nouvelles : tab === "en_cours" ? enCours : terminees;
@@ -2188,14 +2196,14 @@ function StatCard({ label, value, tone, small }: { label: string; value: string;
 }
 
 function PharmOrderCard({ order, getMed, onOpen, onMarkDelivered }: { order: Order; getMed: (id: string) => Medicine; onOpen: () => void; onMarkDelivered: () => void }) {
-  const isPaid = order.status === "accepted" || order.status === "ready";
+  const isPaid = (order.status === "accepted" || order.status === "ready") && order.paymentStatus === "paid";
 
   return (
     <div className="ph-card p-4 w-full text-left">
      <button onClick={onOpen} className="w-full text-left active:scale-[0.99] transition">
       <div className="flex items-center justify-between mb-1">
         <span className="ph-display font-bold text-sm">#{order.ref}</span>
-        <StatusBadge status={order.status} />
+        <StatusBadge status={order.status} paymentStatus={order.paymentStatus} />
       </div>
       <p className="text-sm font-semibold text-[hsl(var(--ph-ink))]">{order.clientName}</p>
       <p className="text-[11px] text-[hsl(var(--ph-ink-soft))]">{order.clientPhone}</p>
@@ -3229,7 +3237,6 @@ function PharmacistStats({ orders, medicines, getMed }: {
   getMed: (id: string) => Medicine;
 }) {
   const stats = useMemo(() => {
-    const paidStatuses: OrderStatus[] = ["accepted", "ready", "delivered"];
     const now = Date.now();
     const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
     const startOfWeek = new Date(startOfDay);
@@ -3241,7 +3248,7 @@ function PharmacistStats({ orders, medicines, getMed }: {
       o.items.reduce((s, i) => s + (i.isAvailable === false ? 0 : (i.confirmedPrice || 0) * i.quantity), 0);
     const orderTotal = (o: Order) => orderSubtotal(o) + (o.deliveryFee || 0);
 
-    const paid = orders.filter((o) => paidStatuses.includes(o.status));
+    const paid = orders.filter((o) => o.paymentStatus === "paid");
     const caDay = paid.filter((o) => o.createdAt >= startOfDay.getTime()).reduce((s, o) => s + orderTotal(o), 0);
     const caWeek = paid.filter((o) => o.createdAt >= startOfWeek.getTime()).reduce((s, o) => s + orderTotal(o), 0);
     const caMonth = paid.filter((o) => o.createdAt >= startOfMonth.getTime()).reduce((s, o) => s + orderTotal(o), 0);
