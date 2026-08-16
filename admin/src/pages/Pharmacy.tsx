@@ -2060,6 +2060,19 @@ function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedici
               sonner.error("Échec de l'envoi", { description: (err as Error).message });
             }
           }}
+          onCancel={async () => {
+            try {
+              await api(`/orders/${activeOrder.id}/status`, {
+                method: "PATCH",
+                body: JSON.stringify({ status: "cancelled" }),
+              });
+              await refreshOrders();
+              setView("dashboard");
+              sonner.error(`Commande #${activeOrder.ref} annulée`, { duration: 2500 });
+            } catch (err) {
+              sonner.error("Échec de l'annulation", { description: (err as Error).message });
+            }
+          }}
         />
       )}
       {view === "catalogue" && (
@@ -2239,13 +2252,15 @@ function PharmOrderCard({ order, getMed, onOpen, onMarkDelivered }: { order: Ord
 }
 
 // ---------- Pharm 2: Order Detail ----------
-function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onRequestPrescription }: {
+function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onRequestPrescription, onCancel }: {
   order: Order;
   getMed: (id: string) => Medicine;
   onBack: () => void;
   onSubmit: (order: Order) => void;
   onRequestPrescription: () => void;
+  onCancel: () => void;
 }) {
+  const paymentRefused = order.status === "accepted" && order.paymentStatus !== "paid" && order.paymentStatus !== "processing";
   const [items, setItems] = useState<OrderItem[]>(
     order.items.map((i) => {
       const m = getMed(i.medicineId);
@@ -2299,6 +2314,21 @@ function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onRequestPresc
           <Phone className="h-5 w-5" />
         </a>
       </div>
+
+      {paymentRefused && (
+        <div className="ph-card p-4 mb-4 border border-red-200 bg-red-50">
+          <p className="text-sm font-semibold text-red-700 mb-1">⚠️ Paiement refusé ou en échec</p>
+          <p className="text-xs text-red-600 mb-3">
+            Le client peut réessayer de payer de son côté, ou tu peux annuler la commande si tu ne veux plus l'honorer.
+          </p>
+          <button
+            onClick={onCancel}
+            className="w-full h-10 rounded-xl bg-red-600 text-white text-sm font-semibold active:scale-[0.98] transition"
+          >
+            Annuler la commande
+          </button>
+        </div>
+      )}
 
       {order.deliveryMode === "livraison" && (order.city || order.deliveryAddress) && (
         <div className="ph-card p-4 mb-4">
