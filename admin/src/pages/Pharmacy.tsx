@@ -1640,7 +1640,7 @@ function CartScreen({ cart, getMed, onBack, onUpdate, onRemove, onConfirm }: {
         </div>
       </div>
 
-      <div className="fixed bottom-20 left-4 right-4 z-30">
+      <div className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-4 right-4 z-30">
         <button onClick={handleConfirm} className="ph-btn-primary w-full h-13 py-3.5 flex items-center justify-center gap-2">
           <Check className="h-4 w-4" /> Confirmer la commande
         </button>
@@ -1878,7 +1878,7 @@ function PharmacistResponse({ order, getMed, onAccept, onCancel, onBack }: {
             </div>
           </div>
 
-          <div className="fixed bottom-20 left-4 right-4 z-30 space-y-2">
+          <div className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-4 right-4 z-30 space-y-2">
             <button onClick={onAccept} className="ph-btn-primary w-full h-12 flex items-center justify-center gap-2">
               <Check className="h-4 w-4" /> Accepter et payer
             </button>
@@ -2193,7 +2193,7 @@ function PharmacistDashboard({ orders, getMed, onOpen, onGoCatalogue, onGoPhoneO
 
       <button
         onClick={onGoPhoneOrder}
-        className="ph-btn-primary fixed bottom-20 right-4 h-14 px-5 rounded-full flex items-center gap-2 shadow-2xl z-30"
+        className="ph-btn-primary fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 h-14 px-5 rounded-full flex items-center gap-2 shadow-2xl z-30"
       >
         <Phone className="h-4 w-4" />
         <span className="text-sm font-semibold">Commande téléphone</span>
@@ -2502,7 +2502,7 @@ function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onRequestPresc
         </button>
       </div>
 
-      <div className="fixed bottom-16 left-4 right-4 z-30">
+      <div className="fixed bottom-[calc(4rem+env(safe-area-inset-bottom))] left-4 right-4 z-30">
         <button
           onClick={handleSubmit}
           disabled={!canSubmit}
@@ -2603,7 +2603,7 @@ function PharmacistCatalogue({ medicines, setMedicines, pharmacyId, refreshMedic
 
       <button
         onClick={() => setShowAdd(true)}
-        className="ph-btn-primary fixed bottom-20 right-4 h-14 w-14 rounded-full flex items-center justify-center shadow-2xl z-30"
+        className="ph-btn-primary fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 h-14 w-14 rounded-full flex items-center justify-center shadow-2xl z-30"
         aria-label="Ajouter"
       >
         <Plus className="h-6 w-6" />
@@ -2804,7 +2804,7 @@ function PhoneOrderCompose({ medicines, pharmacyId, onDone, onBack }: {
         {cartCount > 0 && (
           <button
             onClick={() => setStep("cart")}
-            className="ph-btn-primary fixed bottom-20 left-4 right-4 h-14 rounded-full shadow-2xl z-40 flex items-center justify-between px-5"
+            className="ph-btn-primary fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-4 right-4 h-14 rounded-full shadow-2xl z-40 flex items-center justify-between px-5"
           >
             <span className="text-sm font-semibold">{cartCount} article{cartCount > 1 ? "s" : ""}</span>
             <span className="text-sm font-bold">Voir le panier →</span>
