@@ -274,6 +274,7 @@ interface Order {
   deliveryAddress?: string;
   prescriptionUrl?: string;
   prescriptionRequested?: boolean;
+  paymentStatus?: string;
 }
 
 // ============================================================
@@ -313,6 +314,7 @@ function apiOrderToDemo(o: any): Order {
     clientPhone: o.customer_phone ?? "",
     city: o.city ?? undefined,
     deliveryAddress: o.delivery_address ?? undefined,
+    paymentStatus: o.payment_status,
   };
 }
 
@@ -1038,6 +1040,18 @@ export default function Pharmacy() {
           orders={orders}
           activeOrder={activeOrder}
           setActiveOrderId={setActiveOrderId}
+          retryPay={async (o) => {
+            try {
+              await api(`/orders/${o.id}/pay`, { method: "POST" });
+              await refreshOrders();
+              sonner.success("Demande de paiement renvoyée ✓", {
+                description: "Confirme le débit dans ton application Galimo.",
+                duration: 5000,
+              });
+            } catch (err) {
+              sonner.error("Échec du paiement", { description: (err as Error).message });
+            }
+          }}
           uploadPrescription={(id, url) => {
             setOrders((p) => p.map((o) => (o.id === id ? { ...o, prescriptionUrl: url } : o)));
             sonner.success("Ordonnance envoyée ✓", {
@@ -1046,19 +1060,17 @@ export default function Pharmacy() {
             });
           }}
           acceptOrder={async (id) => {
-            const o = orders.find((x) => x.id === id);
             try {
               await api(`/orders/${id}/confirm`, { method: "PATCH" });
+              await api(`/orders/${id}/pay`, { method: "POST" });
               await refreshOrders();
-              sonner.success("Commande confirmée ✓", {
-                description: o?.deliveryMode === "livraison"
-                  ? "La pharmacienne va vous appeler pour convenir du prix du transport."
-                  : `Commande #${o?.ref} confirmée — réglez à la pharmacie.`,
-                duration: 5000,
+              sonner.success("Demande de paiement envoyée ✓", {
+                description: "Confirme le débit dans ton application Galimo pour finaliser.",
+                duration: 6000,
               });
               setClientView("history");
             } catch (err) {
-              sonner.error("Échec de la confirmation", { description: (err as Error).message });
+              sonner.error("Échec du paiement", { description: (err as Error).message });
             }
           }}
           cancelOrder={async (id) => {
@@ -1129,11 +1141,12 @@ function ClientArea(props: {
   uploadPrescription: (id: string, url: string) => void;
   acceptOrder: (id: string) => void;
   cancelOrder: (id: string) => void;
+  retryPay: (o: Order) => void;
 }) {
   const {
     view, setView, medicines, getMed, cart, setCart, addToCart,
     selectedMedicine, setSelectedMedicine, submitOrder,
-    orders, activeOrder, setActiveOrderId, uploadPrescription, acceptOrder, cancelOrder,
+    orders, activeOrder, setActiveOrderId, uploadPrescription, acceptOrder, cancelOrder, retryPay,
   } = props;
 
   const cartCount = cart.reduce((s, l) => s + l.quantity, 0);
@@ -1211,6 +1224,7 @@ function ClientArea(props: {
             });
             setView("cart");
           }}
+          onRetryPay={retryPay}
           onBack={() => setView("home")}
         />
       )}
@@ -1873,11 +1887,12 @@ function PharmacistResponse({ order, getMed, onAccept, onCancel, onBack }: {
 }
 
 // ---------- Screen 6: Order History ----------
-function OrderHistory({ orders, getMed, onOpen, onReorder, onBack }: {
+function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onBack }: {
   orders: Order[];
   getMed: (id: string) => Medicine;
   onOpen: (o: Order) => void;
   onReorder: (o: Order) => void;
+  onRetryPay: (o: Order) => void;
   onBack: () => void;
 }) {
   const canReorder = (s: OrderStatus) => s === "delivered" || s === "accepted" || s === "ready" || s === "cancelled" || s === "expired";
@@ -1914,6 +1929,17 @@ function OrderHistory({ orders, getMed, onOpen, onReorder, onBack }: {
                 <ChevronRight className="h-4 w-4 text-[hsl(var(--ph-ink-soft))]" />
               </div>
              </button>
+             {o.status === "accepted" && o.paymentStatus === "processing" && (
+               <p className="mt-2 text-xs text-amber-700 font-medium">⏳ En attente de ta confirmation sur l'app Galimo…</p>
+             )}
+             {o.status === "accepted" && (o.paymentStatus === "unpaid" || !o.paymentStatus) && (
+               <button
+                 onClick={(e) => { e.stopPropagation(); onRetryPay(o); }}
+                 className="mt-3 w-full h-10 rounded-xl bg-red-50 text-red-700 font-semibold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition"
+               >
+                 Paiement échoué — réessayer
+               </button>
+             )}
              {canReorder(o.status) && (
                <button
                  onClick={(e) => { e.stopPropagation(); onReorder(o); }}

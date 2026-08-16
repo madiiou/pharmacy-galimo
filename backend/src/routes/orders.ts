@@ -4,6 +4,8 @@ import { pool } from "../db.js";
 import { requireAuth, requireRole } from "../auth.js";
 import { canManagePharmacy } from "./pharmacies.js";
 import { notifyOrderChange } from "../chat.js";
+import { requestDebit } from "../galimoPartner.js";
+import crypto from "node:crypto";
 
 export const ordersRouter = Router();
 
@@ -316,6 +318,46 @@ ordersRouter.patch("/:id/confirm", requireAuth, async (req, res) => {
   );
   notifyOrderChange(result.rows[0]);
   res.json(result.rows[0]);
+});
+
+// Le client paie sa commande confirmée via son wallet Galimo (API Partenaire)
+ordersRouter.post("/:id/pay", requireAuth, async (req, res) => {
+  const orderResult = await pool.query("SELECT * FROM orders WHERE id = $1", [req.params.id]);
+  if (!orderResult.rowCount) return res.status(404).json({ error: "Not found" });
+  const order = orderResult.rows[0];
+
+  if (order.user_id !== req.user!.sub) return res.status(403).json({ error: "Forbidden" });
+  if (order.status !== "pending" || order.payment_status === "paid") {
+    return res.status(400).json({ error: "Order is not payable" });
+  }
+  if (order.payment_status === "processing") {
+    return res.status(400).json({ error: "Payment already in progress" });
+  }
+
+  const userResult = await pool.query("SELECT phone FROM users WHERE id = $1", [order.user_id]);
+  const phone = userResult.rows[0]?.phone;
+  if (!phone) return res.status(400).json({ error: "No phone number on file for this account" });
+
+  const reference = `PHARM-${order.id.slice(0, 8)}-${crypto.randomBytes(3).toString("hex")}`;
+
+  try {
+    const debit = await requestDebit({
+      phone,
+      amount: order.total_amount,
+      reference,
+      description: `Pharmacie - commande #${order.id.slice(0, 8)}`,
+    });
+
+    const result = await pool.query(
+      `UPDATE orders SET payment_status = 'processing', payment_reference = $1, payment_idrequest = $2, updated_at = now()
+       WHERE id = $3 RETURNING *`,
+      [reference, debit.idrequest, order.id]
+    );
+    notifyOrderChange(result.rows[0]);
+    res.json(result.rows[0]);
+  } catch (err: any) {
+    res.status(502).json({ error: err.message ?? "Payment request failed" });
+  }
 });
 
 // Le client annule sa propre commande (avant confirmation ou paiement)
