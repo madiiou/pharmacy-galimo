@@ -340,10 +340,16 @@ ordersRouter.post("/:id/pay", requireAuth, async (req, res) => {
 
   const reference = `PHARM-${order.id.slice(0, 8)}-${crypto.randomBytes(3).toString("hex")}`;
 
+  // Commission Galimo (10%) sur le prix des médicaments uniquement, ajoutée
+  // par-dessus ce que paie le client — le transport n'est pas commissionné
+  // et la pharmacie reçoit son montant plein.
+  const medicinesSubtotal = order.total_amount - order.delivery_fee;
+  const debitAmount = Math.round(medicinesSubtotal * 1.10) + order.delivery_fee;
+
   try {
     const debit = await requestDebit({
       phone,
-      amount: order.total_amount,
+      amount: debitAmount,
       reference,
       description: `Pharmacie - commande #${order.id.slice(0, 8)}`,
     });

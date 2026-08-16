@@ -1790,7 +1790,8 @@ function PharmacistResponse({ order, getMed, onAccept, onCancel, onBack }: {
   const unavailable = order.items.filter((i) => i.isAvailable === false);
   const allUnavailable = available.length === 0;
   const subtotal = available.reduce((s, i) => s + (i.confirmedPrice || 0) * i.quantity, 0);
-  const total = subtotal + (order.deliveryFee || 0);
+  const serviceFee = galimoCommission(subtotal);
+  const total = subtotal + serviceFee + (order.deliveryFee || 0);
 
   return (
     <div className="px-4 pt-4 pb-32">
@@ -1860,6 +1861,10 @@ function PharmacistResponse({ order, getMed, onAccept, onCancel, onBack }: {
             <div className="flex justify-between text-sm">
               <span className="text-[hsl(var(--ph-ink-soft))]">Sous-total</span>
               <span className="font-semibold">{formatGNF(subtotal)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-[hsl(var(--ph-ink-soft))]">Frais de service (10%)</span>
+              <span className="font-semibold">{formatGNF(serviceFee)}</span>
             </div>
             {order.deliveryMode === "livraison" && (
               <div className="flex justify-between text-sm">
@@ -2469,20 +2474,20 @@ function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onRequestPresc
             </div>
           )}
           <div className="border-t border-[hsl(var(--ph-border))] pt-2 flex justify-between items-center">
-            <span className="ph-display font-bold">Total</span>
+            <span className="ph-display font-bold">Total pour la pharmacie</span>
             <span className="ph-display font-bold text-lg text-[hsl(var(--ph-purple))]">{formatGNF(total)}</span>
           </div>
           <div className="mt-2 pt-2 border-t border-dashed border-[hsl(var(--ph-border))] space-y-1">
             <div className="flex justify-between text-[11px] text-[hsl(var(--ph-ink-soft))]">
-              <span>Commission Galimo</span>
-              <span className="font-semibold">−{formatGNF(galimoCommission(subtotal))}</span>
+              <span>+ Frais de service Galimo (10%, à la charge du client)</span>
+              <span className="font-semibold">+{formatGNF(galimoCommission(subtotal))}</span>
             </div>
             <div className="flex justify-between text-xs">
-              <span className="font-semibold text-emerald-700">Net pharmacie</span>
-              <span className="font-bold text-emerald-700">{formatGNF(pharmacyNet(subtotal) + (Number(deliveryFee) || 0))}</span>
+              <span className="font-semibold text-emerald-700">Total payé par le client</span>
+              <span className="font-bold text-emerald-700">{formatGNF(total + galimoCommission(subtotal))}</span>
             </div>
             <p className="text-[10px] text-[hsl(var(--ph-ink-soft))] leading-tight pt-0.5">
-              Le transport (livreur) n'est pas soumis à commission.
+              Le transport n'est pas soumis à commission — la pharmacie reçoit son montant plein.
             </p>
           </div>
         </div>
@@ -3241,10 +3246,10 @@ function printOrderTicket(order: Order, getMed: (id: string) => Medicine) {
   }
   line(`TOTAL          ${totalWithFee.toLocaleString("fr-FR")} GNF`, { bold: true, size: 11, align: "right" });
   hr();
-  const commission = galimoCommission(subtotal);
-  const net = pharmacyNet(subtotal) + (order.deliveryFee || 0);
-  line(`Commission Galimo  -${commission.toLocaleString("fr-FR")} GNF`, { size: 8, align: "right" });
-  line(`NET PHARMACIE  ${net.toLocaleString("fr-FR")} GNF`, { bold: true, size: 10, align: "right" });
+  const serviceFee = galimoCommission(subtotal);
+  const clientTotal = totalWithFee + serviceFee;
+  line(`Frais de service (10%, client)  +${serviceFee.toLocaleString("fr-FR")} GNF`, { size: 8, align: "right" });
+  line(`TOTAL PAYÉ PAR LE CLIENT  ${clientTotal.toLocaleString("fr-FR")} GNF`, { bold: true, size: 10, align: "right" });
   hr();
   y += 2;
   line("Merci de votre confiance", { size: 8, align: "center" });
@@ -3283,10 +3288,6 @@ function PharmacistStats({ orders, medicines, getMed }: {
     const caWeek = paid.filter((o) => o.createdAt >= startOfWeek.getTime()).reduce((s, o) => s + orderTotal(o), 0);
     const caMonth = paid.filter((o) => o.createdAt >= startOfMonth.getTime()).reduce((s, o) => s + orderTotal(o), 0);
 
-    const subDay = paid.filter((o) => o.createdAt >= startOfDay.getTime()).reduce((s, o) => s + orderSubtotal(o), 0);
-    const subWeek = paid.filter((o) => o.createdAt >= startOfWeek.getTime()).reduce((s, o) => s + orderSubtotal(o), 0);
-    const subMonth = paid.filter((o) => o.createdAt >= startOfMonth.getTime()).reduce((s, o) => s + orderSubtotal(o), 0);
-
     // Top products (sold qty on paid orders)
     const soldMap = new Map<string, number>();
     paid.forEach((o) => o.items.forEach((i) => {
@@ -3319,10 +3320,12 @@ function PharmacistStats({ orders, medicines, getMed }: {
     };
 
     return {
+      // La pharmacie reçoit son montant plein : les frais de service Galimo
+      // sont payés en plus par le client, pas déduits d'ici.
       caDay, caWeek, caMonth,
-      netDay: caDay - galimoCommission(subDay),
-      netWeek: caWeek - galimoCommission(subWeek),
-      netMonth: caMonth - galimoCommission(subMonth),
+      netDay: caDay,
+      netWeek: caWeek,
+      netMonth: caMonth,
       topProducts, topRuptures, ordersCount, now,
     };
   }, [orders, medicines, getMed]);
