@@ -805,6 +805,15 @@ const PHARMACY = {
   deliveryCities: ["Conakry"] as string[],
 };
 
+function WhatsAppIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.472-.148-.67.15-.198.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.372-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.626.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+      <path d="M12.004 2c-5.514 0-9.997 4.483-9.997 9.997 0 1.763.464 3.486 1.346 5.001L2 22l5.144-1.334a9.96 9.96 0 0 0 4.86 1.238h.004c5.514 0 9.996-4.483 9.996-9.997C21.998 6.483 17.516 2 12.004 2zm5.845 15.842a8.278 8.278 0 0 1-5.845 2.421h-.003a8.276 8.276 0 0 1-4.213-1.152l-.302-.18-3.053.792.815-2.977-.197-.306a8.263 8.263 0 0 1-1.267-4.443c0-4.582 3.73-8.312 8.315-8.312a8.256 8.256 0 0 1 5.878 2.437 8.257 8.257 0 0 1 2.436 5.879c0 4.583-3.731 8.313-8.314 8.313z"/>
+    </svg>
+  );
+}
+
 const STOCK_COLORS: Record<StockLevel, string> = {
   high: "bg-emerald-500",
   medium: "bg-amber-500",
@@ -869,18 +878,25 @@ export default function Pharmacy() {
   }, [mode]);
 
   const [pharmacyId, setPharmacyId] = useState<string | null>(null);
+  const [pharmacyWhatsapp, setPharmacyWhatsapp] = useState<string | null>(null);
   const [medicines, setMedicines] = useState<Medicine[]>([]);
 
   useEffect(() => {
     (async () => {
       try {
-        const mine = getToken() ? await api<{ id: string }[]>("/pharmacies/mine").catch(() => []) : [];
+        const mine = getToken()
+          ? await api<{ id: string; whatsapp?: string | null }[]>("/pharmacies/mine").catch(() => [])
+          : [];
         if (mine[0]) {
           setPharmacyId(mine[0].id);
+          setPharmacyWhatsapp(mine[0].whatsapp ?? null);
           return;
         }
-        const all = await api<{ id: string }[]>("/pharmacies");
-        if (all[0]) setPharmacyId(all[0].id);
+        const all = await api<{ id: string; whatsapp?: string | null }[]>("/pharmacies");
+        if (all[0]) {
+          setPharmacyId(all[0].id);
+          setPharmacyWhatsapp(all[0].whatsapp ?? null);
+        }
       } catch {}
     })();
   }, []);
@@ -1030,6 +1046,7 @@ export default function Pharmacy() {
           view={clientView}
           setView={setClientView}
           medicines={medicines}
+          pharmacyWhatsapp={pharmacyWhatsapp}
           getMed={getMed}
           cart={cart}
           setCart={setCart}
@@ -1124,6 +1141,7 @@ function ClientArea(props: {
   view: ClientView;
   setView: (v: ClientView) => void;
   medicines: Medicine[];
+  pharmacyWhatsapp: string | null;
   getMed: (id: string) => Medicine;
   cart: CartLine[];
   setCart: React.Dispatch<React.SetStateAction<CartLine[]>>;
@@ -1144,7 +1162,7 @@ function ClientArea(props: {
   retryPay: (o: Order) => void;
 }) {
   const {
-    view, setView, medicines, getMed, cart, setCart, addToCart,
+    view, setView, medicines, pharmacyWhatsapp, getMed, cart, setCart, addToCart,
     selectedMedicine, setSelectedMedicine, submitOrder,
     orders, activeOrder, setActiveOrderId, uploadPrescription, acceptOrder, cancelOrder, retryPay,
   } = props;
@@ -1156,6 +1174,7 @@ function ClientArea(props: {
       {view === "home" && (
         <PharmacyHome
           medicines={medicines}
+          pharmacyWhatsapp={pharmacyWhatsapp}
           onOpenDetail={(m) => { setSelectedMedicine(m); setView("detail"); }}
           onAdd={(m) => addToCart(m.id)}
           onOpenCart={() => setView("cart")}
@@ -1280,8 +1299,9 @@ function ClientTabBar({ view, setView, cartCount, ordersDot }: { view: ClientVie
 }
 
 // ---------- Screen 1: Home ----------
-function PharmacyHome({ medicines, onOpenDetail, onAdd, onOpenCart, cartCount }: {
+function PharmacyHome({ medicines, pharmacyWhatsapp, onOpenDetail, onAdd, onOpenCart, cartCount }: {
   medicines: Medicine[];
+  pharmacyWhatsapp: string | null;
   onOpenDetail: (m: Medicine) => void;
   onAdd: (m: Medicine) => void;
   onOpenCart: () => void;
@@ -1328,9 +1348,22 @@ function PharmacyHome({ medicines, onOpenDetail, onAdd, onOpenCart, cartCount }:
                 <MapPin className="h-3 w-3" /> {PHARMACY.city}
               </div>
             </div>
-            <div className={`px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 ${PHARMACY.isOpen ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${PHARMACY.isOpen ? "bg-emerald-500" : "bg-red-500"}`} />
-              {PHARMACY.isOpen ? "Ouvert" : "Fermé"}
+            <div className="flex flex-col items-end gap-1.5">
+              <div className={`px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 ${PHARMACY.isOpen ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${PHARMACY.isOpen ? "bg-emerald-500" : "bg-red-500"}`} />
+                {PHARMACY.isOpen ? "Ouvert" : "Fermé"}
+              </div>
+              {pharmacyWhatsapp && (
+                <a
+                  href={`https://wa.me/${pharmacyWhatsapp.replace(/[^0-9]/g, "")}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Contacter la pharmacie sur WhatsApp"
+                  className="h-8 w-8 rounded-full bg-emerald-500 text-white flex items-center justify-center active:scale-95 shadow-sm"
+                >
+                  <WhatsAppIcon className="h-4 w-4" />
+                </a>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-1 text-[11px] text-[hsl(var(--ph-ink-soft))] mt-2">
