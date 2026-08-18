@@ -272,8 +272,6 @@ interface Order {
   clientPhone: string;
   city?: string;
   deliveryAddress?: string;
-  prescriptionUrl?: string;
-  prescriptionRequested?: boolean;
   paymentStatus?: string;
 }
 
@@ -1069,13 +1067,6 @@ export default function Pharmacy() {
               sonner.error("Échec du paiement", { description: (err as Error).message });
             }
           }}
-          uploadPrescription={(id, url) => {
-            setOrders((p) => p.map((o) => (o.id === id ? { ...o, prescriptionUrl: url } : o)));
-            sonner.success("Ordonnance envoyée ✓", {
-              description: "La pharmacienne va la vérifier.",
-              duration: 3000,
-            });
-          }}
           acceptOrder={async (id) => {
             try {
               await api(`/orders/${id}/confirm`, { method: "PATCH" });
@@ -1119,14 +1110,6 @@ export default function Pharmacy() {
           activeOrder={activePharmOrder}
           setActiveOrderId={setActivePharmOrderId}
           getMed={getMed}
-          requestPrescription={(id) => {
-            const o = orders.find((x) => x.id === id);
-            setOrders((p) => p.map((x) => (x.id === id ? { ...x, prescriptionRequested: true } : x)));
-            sonner.success("Ordonnance demandée au client", {
-              description: o ? `#${o.ref}` : undefined,
-              duration: 2500,
-            });
-          }}
         />
       )}
     </div>
@@ -1156,7 +1139,6 @@ function ClientArea(props: {
   orders: Order[];
   activeOrder: Order | null;
   setActiveOrderId: (id: string | null) => void;
-  uploadPrescription: (id: string, url: string) => void;
   acceptOrder: (id: string) => void;
   cancelOrder: (id: string) => void;
   retryPay: (o: Order) => void;
@@ -1164,7 +1146,7 @@ function ClientArea(props: {
   const {
     view, setView, medicines, pharmacyWhatsapp, getMed, cart, setCart, addToCart,
     selectedMedicine, setSelectedMedicine, submitOrder,
-    orders, activeOrder, setActiveOrderId, uploadPrescription, acceptOrder, cancelOrder, retryPay,
+    orders, activeOrder, setActiveOrderId, acceptOrder, cancelOrder, retryPay,
   } = props;
 
   const cartCount = cart.reduce((s, l) => s + l.quantity, 0);
@@ -1203,9 +1185,10 @@ function ClientArea(props: {
       {view === "sent" && activeOrder && (
         <OrderSent
           order={activeOrder}
+          getMed={getMed}
+          pharmacyWhatsapp={pharmacyWhatsapp}
           onSeeResponse={() => setView("response")}
           onGoHome={() => setView("home")}
-          onUploadPrescription={(url) => uploadPrescription(activeOrder.id, url)}
         />
       )}
       {view === "response" && activeOrder && (
@@ -1253,7 +1236,7 @@ function ClientArea(props: {
         view={view}
         setView={setView}
         cartCount={cartCount}
-        ordersDot={orders.some((o) => o.status === "awaiting_client" || (o.prescriptionRequested && !o.prescriptionUrl))}
+        ordersDot={orders.some((o) => o.status === "awaiting_client")}
       />
     </>
   );
@@ -1683,22 +1666,14 @@ function CartScreen({ cart, getMed, onBack, onUpdate, onRemove, onConfirm }: {
 }
 
 // ---------- Screen 4: Order Sent ----------
-function OrderSent({ order, onSeeResponse, onGoHome, onUploadPrescription }: {
+function OrderSent({ order, getMed, pharmacyWhatsapp, onSeeResponse, onGoHome }: {
   order: Order;
+  getMed: (id: string) => Medicine;
+  pharmacyWhatsapp: string | null;
   onSeeResponse: () => void;
   onGoHome: () => void;
-  onUploadPrescription: (url: string) => void;
 }) {
-  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    if (f.size > 5 * 1024 * 1024) {
-      sonner.error("Fichier trop volumineux (max 5 Mo)");
-      return;
-    }
-    const url = URL.createObjectURL(f);
-    onUploadPrescription(url);
-  };
+  const needsRx = order.items.some((i) => getMed(i.medicineId).prescription);
   const steps = [
     { key: "sent", label: "Envoyée", icon: "📤" },
     { key: "pending", label: "En attente pharmacienne", icon: "⏳" },
@@ -1765,42 +1740,28 @@ function OrderSent({ order, onSeeResponse, onGoHome, onUploadPrescription }: {
           </div>
         </div>
       )}
-      {order.prescriptionRequested && !order.prescriptionUrl && (
+      {needsRx && pharmacyWhatsapp && (
         <div className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-4">
           <div className="flex items-start gap-3 mb-3">
             <div className="h-9 w-9 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
               <AlertCircle className="h-5 w-5 text-amber-700" />
             </div>
             <div className="flex-1">
-              <p className="text-sm font-bold text-amber-900">Ordonnance demandée</p>
+              <p className="text-sm font-bold text-amber-900">Ordonnance nécessaire</p>
               <p className="text-[12px] text-amber-800 mt-1 leading-relaxed">
-                La pharmacienne a besoin de ton ordonnance pour valider la commande. Prends-la en photo bien lisible.
+                Certains produits de ta commande #{order.ref} nécessitent une ordonnance. Envoie-la en photo directement sur WhatsApp.
               </p>
             </div>
           </div>
-          <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-amber-300 rounded-xl py-6 cursor-pointer bg-white active:scale-[0.99] transition">
-            <Upload className="h-6 w-6 text-amber-600" />
-            <span className="text-sm font-semibold text-amber-900">Envoyer la photo</span>
-            <span className="text-[11px] text-amber-700">JPG, PNG ou PDF · max 5 Mo</span>
-            <input
-              type="file"
-              accept="image/*,application/pdf"
-              capture="environment"
-              onChange={handleUpload}
-              className="hidden"
-            />
-          </label>
-        </div>
-      )}
-      {order.prescriptionUrl && (
-        <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 flex items-center gap-3">
-          <CheckCircle2 className="h-5 w-5 text-emerald-600 flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-emerald-900">Ordonnance envoyée</p>
-            <p className="text-[11px] text-emerald-700">La pharmacienne va la vérifier.</p>
-          </div>
-          <a href={order.prescriptionUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-emerald-700 underline">
-            Voir
+          <a
+            href={`https://wa.me/${pharmacyWhatsapp.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(
+              `Bonjour, voici mon ordonnance pour la commande #${order.ref}.`
+            )}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 h-11 rounded-xl bg-emerald-500 text-white font-semibold text-sm active:scale-[0.98] transition"
+          >
+            <WhatsAppIcon className="h-4 w-4" /> Envoyer sur WhatsApp
           </a>
         </div>
       )}
@@ -2020,7 +1981,7 @@ function StatusBadge({ status, paymentStatus }: { status: OrderStatus; paymentSt
 // PHARMACIST AREA
 // ============================================================
 
-function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedicines, pharmacyId, refreshMedicines, refreshOrders, activeOrder, setActiveOrderId, getMed, requestPrescription }: {
+function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedicines, pharmacyId, refreshMedicines, refreshOrders, activeOrder, setActiveOrderId, getMed }: {
   view: PharmView;
   setView: (v: PharmView) => void;
   orders: Order[];
@@ -2033,7 +1994,6 @@ function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedici
   activeOrder: Order | null;
   setActiveOrderId: (id: string | null) => void;
   getMed: (id: string) => Medicine;
-  requestPrescription: (id: string) => void;
 }) {
   return (
     <>
@@ -2067,7 +2027,6 @@ function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedici
           order={activeOrder}
           getMed={getMed}
           onBack={() => setView("dashboard")}
-          onRequestPrescription={() => requestPrescription(activeOrder.id)}
           onSubmit={async (updated) => {
             try {
               await api(`/orders/${updated.id}/price`, {
@@ -2290,12 +2249,11 @@ function PharmOrderCard({ order, getMed, onOpen, onMarkDelivered }: { order: Ord
 }
 
 // ---------- Pharm 2: Order Detail ----------
-function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onRequestPrescription, onCancel }: {
+function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onCancel }: {
   order: Order;
   getMed: (id: string) => Medicine;
   onBack: () => void;
   onSubmit: (order: Order) => void;
-  onRequestPrescription: () => void;
   onCancel: () => void;
 }) {
   const paymentRefused = order.status === "accepted" && order.paymentStatus !== "paid" && order.paymentStatus !== "processing";
@@ -2382,44 +2340,29 @@ function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onRequestPresc
 
       {(() => {
         const needsRx = order.items.some((i) => getMed(i.medicineId).prescription);
-        if (order.prescriptionUrl) {
-          return (
-            <div className="ph-card p-4 mb-4">
-              <h3 className="ph-display font-semibold text-sm flex items-center gap-2 mb-2">
-                <AlertCircle className="h-4 w-4 text-amber-600" /> Ordonnance reçue
-              </h3>
-              <a
-                href={order.prescriptionUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block rounded-xl overflow-hidden border border-[hsl(var(--ph-border))]"
-              >
-                <img src={order.prescriptionUrl} alt="Ordonnance" className="w-full max-h-64 object-contain bg-[hsl(var(--ph-muted))]" />
-              </a>
-              <p className="text-[11px] text-[hsl(var(--ph-ink-soft))] mt-2">Toucher pour agrandir</p>
-            </div>
-          );
-        }
         if (!needsRx) return null;
+        const cleanPhone = order.clientPhone.replace(/[^0-9]/g, "");
         return (
           <div className="ph-card p-4 mb-4 border border-amber-200 bg-amber-50">
             <h3 className="ph-display font-semibold text-sm flex items-center gap-2 text-amber-900">
               <AlertCircle className="h-4 w-4 text-amber-600" /> Ordonnance nécessaire
             </h3>
             <p className="text-[11px] text-amber-800 mt-1 leading-relaxed">
-              Certains produits nécessitent une ordonnance. Demandez au client de l'envoyer.
+              Certains produits nécessitent une ordonnance. Demandez au client de l'envoyer par WhatsApp.
             </p>
-            {order.prescriptionRequested ? (
-              <div className="mt-3 flex items-center gap-2 text-xs font-semibold text-amber-900">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Ordonnance demandée — en attente du client
-              </div>
-            ) : (
-              <button
-                onClick={onRequestPrescription}
-                className="mt-3 w-full h-10 rounded-xl bg-amber-500 text-white font-semibold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition"
+            {cleanPhone ? (
+              <a
+                href={`https://wa.me/${cleanPhone}?text=${encodeURIComponent(
+                  `Bonjour, pour valider votre commande #${order.ref} nous avons besoin d'une photo de votre ordonnance. Merci de nous l'envoyer ici.`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 w-full h-10 rounded-xl bg-emerald-500 text-white font-semibold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition"
               >
-                <Upload className="h-4 w-4" /> Demander l'ordonnance au client
-              </button>
+                <WhatsAppIcon className="h-4 w-4" /> Demander l'ordonnance sur WhatsApp
+              </a>
+            ) : (
+              <p className="mt-3 text-[11px] text-amber-800">Numéro du client indisponible.</p>
             )}
           </div>
         );
