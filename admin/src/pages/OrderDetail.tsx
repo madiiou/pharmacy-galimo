@@ -4,6 +4,7 @@ import { io, type Socket } from "socket.io-client";
 import { api, getToken } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { Layout } from "../components/Layout";
+import { formatGNF } from "../lib/pharmacy";
 
 interface OrderItem {
   id: string;
@@ -103,11 +104,11 @@ export function OrderDetail() {
           {order.items.map((item) => (
             <li key={item.id} className="py-1 flex justify-between">
               <span>{item.quantity}× {item.medicine_name}</span>
-              <span>{item.subtotal.toLocaleString()} GNF</span>
+              <span>{formatGNF(item.subtotal)}</span>
             </li>
           ))}
         </ul>
-        <p className="text-right font-medium mt-2">Total : {order.total_amount.toLocaleString()} GNF</p>
+        <p className="text-right font-medium mt-2">Total : {formatGNF(order.total_amount)}</p>
 
         {order.status === "awaiting_customer" && user?.id === order.user_id && (
           <div className="mt-4 border-t pt-4">

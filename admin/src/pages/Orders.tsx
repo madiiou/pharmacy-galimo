@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { Layout } from "../components/Layout";
+import { formatGNF } from "../lib/pharmacy";
 
 interface Order {
   id: string;
@@ -48,7 +49,7 @@ export function Orders() {
               <p className="text-sm text-gray-500">{new Date(o.created_at).toLocaleString()}</p>
             </div>
             <div className="text-right">
-              <p className="font-medium">{o.total_amount.toLocaleString()} GNF</p>
+              <p className="font-medium">{formatGNF(o.total_amount)}</p>
               <p className="text-xs text-gray-500">{STATUS_LABELS[o.status] ?? o.status} · {o.payment_status}</p>
             </div>
           </Link>

@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs"
 import { useUserRoles } from "../hooks/useUserRoles";
 import { usePharmacies, type Pharmacy } from "../hooks/usePharmacies";
 import { GUINEA_CITIES } from "./Pharmacy";
+import { formatGNF } from "../lib/pharmacy";
 
 function PharmacyDialog({
   pharmacy,
@@ -256,7 +257,7 @@ export default function AdminPharmacies() {
                 {p.neighborhood ? `📍 ${p.neighborhood}` : "Pas d'adresse"}
               </p>
               {p.phone && <p>📞 {p.phone}</p>}
-              <p>🚚 Livraison : {Number(p.delivery_fee_gnf).toLocaleString()} GNF</p>
+              <p>🚚 Livraison : {formatGNF(Number(p.delivery_fee_gnf))}</p>
               <p className="text-xs text-muted-foreground">
                 {p.total_orders ?? 0} commandes • Owner : {p.owner_id ? p.owner_id.slice(0, 8) + "…" : "aucun"}
               </p>
@@ -346,7 +347,7 @@ function RevenusTab({ pharmacies }: { pharmacies: Pharmacy[] }) {
       <CardHeader>
         <CardTitle className="text-base">Commissions Galimo (10%) par pharmacie</CardTitle>
         <p className="text-xs text-muted-foreground">
-          Estimation basée sur un panier moyen de {AVG_ORDER_GNF.toLocaleString()} GNF. Les chiffres réels seront disponibles une fois les commandes migrées en base.
+          Estimation basée sur un panier moyen de {formatGNF(AVG_ORDER_GNF)}. Les chiffres réels seront disponibles une fois les commandes migrées en base.
         </p>
       </CardHeader>
       <CardContent className="p-0">
@@ -363,8 +364,8 @@ function RevenusTab({ pharmacies }: { pharmacies: Pharmacy[] }) {
                 </div>
               </div>
               <div className="text-right">
-                <p className="font-bold text-emerald-600">{commission.toLocaleString()} GNF</p>
-                <p className="text-xs text-muted-foreground">GMV {gmv.toLocaleString()}</p>
+                <p className="font-bold text-emerald-600">{formatGNF(commission)}</p>
+                <p className="text-xs text-muted-foreground">GMV {formatGNF(gmv)}</p>
               </div>
             </div>
           ))}

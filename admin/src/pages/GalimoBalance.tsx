@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Layout } from "../components/Layout";
 
+const fmt = (n: number) => n.toLocaleString("fr-FR").replace(/[  ]/g, " ");
+
 export function GalimoBalance() {
   const [balance, setBalance] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
@@ -40,7 +42,7 @@ export function GalimoBalance() {
       {balance && (
         <div className="bg-white p-4 rounded shadow mb-6">
           <p className="text-sm text-gray-500">Solde disponible</p>
-          <p className="text-3xl font-bold">{Number(balance.solde ?? 0).toLocaleString()} {balance.devise ?? "GNF"}</p>
+          <p className="text-3xl font-bold">{fmt(Number(balance.solde ?? 0))} {balance.devise ?? "GNF"}</p>
           <p className="text-xs text-gray-400 mt-1">Mis à jour le {balance.lastupdate ?? "—"}</p>
         </div>
       )}
@@ -62,7 +64,7 @@ export function GalimoBalance() {
               <tr key={h.idrequest ?? h.reference ?? i} className="border-b last:border-0">
                 <td className="p-3">{h.reference ?? h.idrequest ?? "—"}</td>
                 <td className="p-3">{h.statut ?? h.status ?? "—"}</td>
-                <td className="p-3">{h.montant ? `${Number(h.montant).toLocaleString()} ${h.devise ?? "GNF"}` : "—"}</td>
+                <td className="p-3">{h.montant ? `${fmt(Number(h.montant))} ${h.devise ?? "GNF"}` : "—"}</td>
                 <td className="p-3">{h.numero_client ?? "—"}</td>
                 <td className="p-3">{h.date_traitement ?? h.date_creation ?? "—"}</td>
               </tr>

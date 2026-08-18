@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { Layout } from "../components/Layout";
+import { formatGNF } from "../lib/pharmacy";
 
 interface Pharmacy {
   id: string;
@@ -89,7 +90,7 @@ export function Medicines() {
               <p className="text-sm text-gray-500">{m.category}</p>
             </div>
             <div className="text-right">
-              <p className="font-medium">{m.price.toLocaleString()} GNF</p>
+              <p className="font-medium">{formatGNF(m.price)}</p>
               <p className="text-xs text-gray-500">{m.in_stock ? "En stock" : "Rupture"}</p>
             </div>
           </div>

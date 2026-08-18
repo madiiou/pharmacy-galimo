@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { Layout } from "../components/Layout";
+import { formatGNF } from "../lib/pharmacy";
 
 interface Pharmacy {
   id: string;
@@ -180,7 +181,7 @@ export function ManualOrder() {
           </div>
         </div>
 
-        <p className="font-medium">Total : {total.toLocaleString()} GNF</p>
+        <p className="font-medium">Total : {formatGNF(total)}</p>
 
         <button type="submit" disabled={saving || !pharmacyId} className="bg-green-600 text-white rounded px-4 py-2">
           {saving ? "Envoi..." : "Envoyer le devis au client"}
