@@ -1940,6 +1940,14 @@ function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onBack }:
                  Paiement échoué — réessayer
                </button>
              )}
+             {o.paymentStatus === "paid" && (
+               <button
+                 onClick={(e) => { e.stopPropagation(); printOrderTicket(o, getMed); }}
+                 className="mt-3 w-full h-10 rounded-xl bg-emerald-50 text-emerald-700 font-semibold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition"
+               >
+                 <Printer className="h-4 w-4" /> Voir le reçu
+               </button>
+             )}
              {canReorder(o.status) && (
                <button
                  onClick={(e) => { e.stopPropagation(); onReorder(o); }}
@@ -3173,6 +3181,14 @@ function printOrderTicket(order: Order, getMed: (id: string) => Medicine) {
     y += (opts?.size ?? 9) * 0.45 + 1.5;
   };
   const hr = () => { doc.setLineDashPattern([1, 1], 0); doc.line(6, y, 74, y); y += 2.5; };
+  const row = (label: string, value: string, opts?: { bold?: boolean; size?: number }) => {
+    doc.setFont("helvetica", opts?.bold ? "bold" : "normal");
+    doc.setFontSize(opts?.size ?? 9);
+    const labelLines = doc.splitTextToSize(label, 44) as string[];
+    doc.text(labelLines, 6, y);
+    doc.text(value, 74, y, { align: "right" });
+    y += labelLines.length * (opts?.size ?? 9) * 0.45 + 1.5;
+  };
 
   line("PHARMACIE LAMBANGNI", { bold: true, size: 12, align: "center" });
   line("Conakry — Guinee", { size: 8, align: "center" });
@@ -3216,16 +3232,16 @@ function printOrderTicket(order: Order, getMed: (id: string) => Medicine) {
   });
   hr();
   const totalWithFee = subtotal + (order.deliveryFee || 0);
-  line(`Sous-total     ${subtotal.toLocaleString("fr-FR")} GNF`, { size: 9, align: "right" });
+  row("Sous-total", `${subtotal.toLocaleString("fr-FR")} GNF`, { size: 9 });
   if (order.deliveryFee && order.deliveryFee > 0) {
-    line(`Transport      ${order.deliveryFee.toLocaleString("fr-FR")} GNF`, { size: 9, align: "right" });
+    row("Transport", `${order.deliveryFee.toLocaleString("fr-FR")} GNF`, { size: 9 });
   }
-  line(`TOTAL          ${totalWithFee.toLocaleString("fr-FR")} GNF`, { bold: true, size: 11, align: "right" });
+  row("TOTAL", `${totalWithFee.toLocaleString("fr-FR")} GNF`, { bold: true, size: 11 });
   hr();
   const serviceFee = galimoCommission(subtotal);
   const clientTotal = totalWithFee + serviceFee;
-  line(`Frais de service Galimo (client)  +${serviceFee.toLocaleString("fr-FR")} GNF`, { size: 8, align: "right" });
-  line(`TOTAL PAYÉ PAR LE CLIENT  ${clientTotal.toLocaleString("fr-FR")} GNF`, { bold: true, size: 10, align: "right" });
+  row("Frais de service Galimo", `+${serviceFee.toLocaleString("fr-FR")} GNF`, { size: 8 });
+  row("TOTAL PAYE PAR LE CLIENT", `${clientTotal.toLocaleString("fr-FR")} GNF`, { bold: true, size: 9 });
   hr();
   y += 2;
   line("Merci de votre confiance", { size: 8, align: "center" });
