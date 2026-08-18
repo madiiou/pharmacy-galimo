@@ -1857,7 +1857,7 @@ function PharmacistResponse({ order, getMed, onAccept, onCancel, onBack }: {
               <span className="font-semibold">{formatGNF(subtotal)}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-[hsl(var(--ph-ink-soft))]">Frais de service (10%)</span>
+              <span className="text-[hsl(var(--ph-ink-soft))]">Frais de service Galimo</span>
               <span className="font-semibold">{formatGNF(serviceFee)}</span>
             </div>
             {order.deliveryMode === "livraison" && (
@@ -2455,7 +2455,7 @@ function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onCancel }: {
           </div>
           <div className="mt-2 pt-2 border-t border-dashed border-[hsl(var(--ph-border))] space-y-1">
             <div className="flex justify-between text-[11px] text-[hsl(var(--ph-ink-soft))]">
-              <span>+ Frais de service Galimo (10%, à la charge du client)</span>
+              <span>+ Frais de service Galimo (à la charge du client)</span>
               <span className="font-semibold">+{formatGNF(galimoCommission(subtotal))}</span>
             </div>
             <div className="flex justify-between text-xs">
@@ -3224,7 +3224,7 @@ function printOrderTicket(order: Order, getMed: (id: string) => Medicine) {
   hr();
   const serviceFee = galimoCommission(subtotal);
   const clientTotal = totalWithFee + serviceFee;
-  line(`Frais de service (10%, client)  +${serviceFee.toLocaleString("fr-FR")} GNF`, { size: 8, align: "right" });
+  line(`Frais de service Galimo (client)  +${serviceFee.toLocaleString("fr-FR")} GNF`, { size: 8, align: "right" });
   line(`TOTAL PAYÉ PAR LE CLIENT  ${clientTotal.toLocaleString("fr-FR")} GNF`, { bold: true, size: 10, align: "right" });
   hr();
   y += 2;
