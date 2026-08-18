@@ -3189,6 +3189,9 @@ function printOrderTicket(order: Order, getMed: (id: string) => Medicine) {
     doc.text(value, 74, y, { align: "right" });
     y += labelLines.length * (opts?.size ?? 9) * 0.45 + 1.5;
   };
+  // fr-FR insere un espace fine insecable comme separateur de milliers,
+  // glyphe absent de la police Helvetica de jsPDF (s'affiche comme "/").
+  const fmt = (n: number) => n.toLocaleString("fr-FR").replace(/[\u202f\u00a0]/g, " ");
 
   line("PHARMACIE LAMBANGNI", { bold: true, size: 12, align: "center" });
   line("Conakry — Guinee", { size: 8, align: "center" });
@@ -3223,7 +3226,7 @@ function printOrderTicket(order: Order, getMed: (id: string) => Medicine) {
     doc.text(nameLines, 6, y);
     doc.text(`x${it.quantity}`, 55, y);
     doc.text(
-      it.isAvailable === false ? "INDISPO" : `${lineTotal.toLocaleString("fr-FR")}`,
+      it.isAvailable === false ? "INDISPO" : fmt(lineTotal),
       74,
       y,
       { align: "right" }
@@ -3232,16 +3235,16 @@ function printOrderTicket(order: Order, getMed: (id: string) => Medicine) {
   });
   hr();
   const totalWithFee = subtotal + (order.deliveryFee || 0);
-  row("Sous-total", `${subtotal.toLocaleString("fr-FR")} GNF`, { size: 9 });
+  row("Sous-total", `${fmt(subtotal)} GNF`, { size: 9 });
   if (order.deliveryFee && order.deliveryFee > 0) {
-    row("Transport", `${order.deliveryFee.toLocaleString("fr-FR")} GNF`, { size: 9 });
+    row("Transport", `${fmt(order.deliveryFee)} GNF`, { size: 9 });
   }
-  row("TOTAL", `${totalWithFee.toLocaleString("fr-FR")} GNF`, { bold: true, size: 11 });
+  row("TOTAL", `${fmt(totalWithFee)} GNF`, { bold: true, size: 11 });
   hr();
   const serviceFee = galimoCommission(subtotal);
   const clientTotal = totalWithFee + serviceFee;
-  row("Frais de service Galimo", `+${serviceFee.toLocaleString("fr-FR")} GNF`, { size: 8 });
-  row("TOTAL PAYE PAR LE CLIENT", `${clientTotal.toLocaleString("fr-FR")} GNF`, { bold: true, size: 9 });
+  row("Frais de service Galimo", `+${fmt(serviceFee)} GNF`, { size: 8 });
+  row("TOTAL PAYE PAR LE CLIENT", `${fmt(clientTotal)} GNF`, { bold: true, size: 9 });
   hr();
   y += 2;
   line("Merci de votre confiance", { size: 8, align: "center" });
