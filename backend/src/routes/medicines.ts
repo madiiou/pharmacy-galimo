@@ -50,6 +50,8 @@ const medicineSchema = z.object({
   description: z.string().optional(),
   indication: z.string().optional(),
   activeSubstance: z.string().optional(),
+  posologie: z.string().optional(),
+  contreIndication: z.string().optional(),
   inStock: z.boolean().default(true),
   requiresPrescription: z.boolean().default(false),
   isActive: z.boolean().optional(),
@@ -67,12 +69,13 @@ medicinesRouter.post("/", requireAuth, requireRole("admin", "pharmacy_partner"),
   const result = await pool.query(
     `INSERT INTO medicines (pharmacy_id, created_by, name, price, original_price, category, form,
                              laboratory, image_url, description, indication, active_substance,
-                             in_stock, requires_prescription)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+                             posologie, contre_indication, in_stock, requires_prescription)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
      RETURNING *`,
     [m.pharmacyId, req.user!.sub, m.name, m.price, m.originalPrice ?? null, m.category ?? null,
      m.form ?? null, m.laboratory ?? null, m.imageUrl ?? null, m.description ?? null,
-     m.indication ?? null, m.activeSubstance ?? null, m.inStock, m.requiresPrescription]
+     m.indication ?? null, m.activeSubstance ?? null, m.posologie ?? null, m.contreIndication ?? null,
+     m.inStock, m.requiresPrescription]
   );
   res.status(201).json(result.rows[0]);
 });
@@ -101,15 +104,18 @@ medicinesRouter.patch("/:id", requireAuth, requireRole("admin", "pharmacy_partne
        description = COALESCE($8, description),
        indication = COALESCE($9, indication),
        active_substance = COALESCE($10, active_substance),
-       in_stock = COALESCE($11, in_stock),
-       requires_prescription = COALESCE($12, requires_prescription),
-       is_active = COALESCE($13, is_active),
+       posologie = COALESCE($11, posologie),
+       contre_indication = COALESCE($12, contre_indication),
+       in_stock = COALESCE($13, in_stock),
+       requires_prescription = COALESCE($14, requires_prescription),
+       is_active = COALESCE($15, is_active),
        updated_at = now()
-     WHERE id = $14
+     WHERE id = $16
      RETURNING *`,
     [m.name ?? null, m.price ?? null, m.originalPrice ?? null, m.category ?? null, m.form ?? null,
      m.laboratory ?? null, m.imageUrl ?? null, m.description ?? null, m.indication ?? null,
-     m.activeSubstance ?? null, m.inStock ?? null, m.requiresPrescription ?? null, m.isActive ?? null,
+     m.activeSubstance ?? null, m.posologie ?? null, m.contreIndication ?? null,
+     m.inStock ?? null, m.requiresPrescription ?? null, m.isActive ?? null,
      req.params.id]
   );
   res.json(result.rows[0]);

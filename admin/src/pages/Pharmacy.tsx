@@ -109,6 +109,8 @@ interface Medicine {
   stock: StockLevel;
   price?: number; // GNF — visible uniquement côté pharmacien
   indications?: string[]; // maux / maladies pour lesquels le produit est indiqué
+  posologie?: string;
+  contreIndication?: string;
 }
 
 interface CartLine { medicineId: string; quantity: number; }
@@ -161,6 +163,8 @@ function apiMedicineToDemo(m: any): Medicine {
     onOrder: false,
     stock: (m.in_stock ? "high" : "out") as StockLevel,
     price: typeof m.price === "number" ? m.price : Number(m.price),
+    posologie: m.posologie ?? undefined,
+    contreIndication: m.contre_indication ?? undefined,
   };
   return { ...base, indications: deriveIndications(base) };
 }
@@ -176,6 +180,8 @@ function demoMedicineToApiBody(m: Medicine, pharmacyId: string) {
     description: m.description || undefined,
     inStock: m.stock !== "out",
     requiresPrescription: m.prescription,
+    posologie: m.posologie || undefined,
+    contreIndication: m.contreIndication || undefined,
   };
 }
 
@@ -1484,6 +1490,25 @@ function MedicineDetail({ medicine, onBack, onAdd }: { medicine: Medicine; onBac
           <h1 className="ph-display font-bold text-2xl text-[hsl(var(--ph-deep))]">{medicine.name}</h1>
           <p className="text-sm text-[hsl(var(--ph-ink-soft))] font-medium mt-0.5">{medicine.dosage}</p>
           <p className="text-sm text-[hsl(var(--ph-ink))] leading-relaxed mt-4">{medicine.description}</p>
+
+          {(medicine.posologie || medicine.contreIndication) && (
+            <div className="mt-4 space-y-3">
+              {medicine.posologie && (
+                <div className="rounded-xl bg-[hsl(var(--ph-muted))] p-3">
+                  <p className="text-[11px] font-bold text-[hsl(var(--ph-deep))] uppercase tracking-wide mb-1">Posologie</p>
+                  <p className="text-xs text-[hsl(var(--ph-ink))] leading-relaxed">{medicine.posologie}</p>
+                </div>
+              )}
+              {medicine.contreIndication && (
+                <div className="rounded-xl bg-amber-50 border border-amber-200 p-3">
+                  <p className="text-[11px] font-bold text-amber-800 uppercase tracking-wide mb-1 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" /> Contre-indications
+                  </p>
+                  <p className="text-xs text-amber-900 leading-relaxed">{medicine.contreIndication}</p>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="mt-5 flex items-center justify-between">
             <span className="text-sm font-semibold">Quantité</span>
