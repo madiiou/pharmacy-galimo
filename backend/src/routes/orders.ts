@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { z } from "zod";
 import { pool } from "../db.js";
 import { requireAuth, requireRole } from "../auth.js";
@@ -8,6 +8,29 @@ import { requestDebit } from "../galimoPartner.js";
 import crypto from "node:crypto";
 
 export const ordersRouter = Router();
+
+// Les trois routes de création de commande partagent la même mécanique :
+// transaction, rollback + réponse d'erreur homogène en cas d'échec, commit
+// puis notification temps réel une fois la commande créée. Seul ce qui se
+// passe dans la transaction et la forme de la réponse diffère entre elles.
+async function createOrderInTransaction(
+  res: Response,
+  handler: (client: import("pg").PoolClient) => Promise<{ order: any; payload: unknown }>
+) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { order, payload } = await handler(client);
+    await client.query("COMMIT");
+    notifyOrderChange(order);
+    res.status(201).json(payload);
+  } catch (err: any) {
+    await client.query("ROLLBACK");
+    res.status(err.status ?? 500).json({ error: err.message ?? "Internal error" });
+  } finally {
+    client.release();
+  }
+}
 
 const ORDER_STATUSES = [
   "awaiting_pharmacist", "awaiting_customer", "pending", "confirmed", "preparing", "delivering", "delivered", "cancelled",
@@ -40,10 +63,7 @@ ordersRouter.post("/", requireAuth, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { pharmacyId, items, notes } = parsed.data;
 
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-
+  await createOrderInTransaction(res, async (client) => {
     const pharmacy = await client.query(
       "SELECT delivery_fee_gnf FROM pharmacies WHERE id = $1 AND is_active = true",
       [pharmacyId]
@@ -84,15 +104,8 @@ ordersRouter.post("/", requireAuth, async (req, res) => {
       );
     }
 
-    await client.query("COMMIT");
-    notifyOrderChange(order);
-    res.status(201).json({ ...order, items: itemRows });
-  } catch (err: any) {
-    await client.query("ROLLBACK");
-    res.status(err.status ?? 500).json({ error: err.message ?? "Internal error" });
-  } finally {
-    client.release();
-  }
+    return { order, payload: { ...order, items: itemRows } };
+  });
 });
 
 const requestOrderSchema = z.object({
@@ -114,10 +127,7 @@ ordersRouter.post("/request", requireAuth, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { pharmacyId, items, deliveryMode, city, deliveryAddress, notes } = parsed.data;
 
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-
+  await createOrderInTransaction(res, async (client) => {
     const pharmacy = await client.query(
       "SELECT delivery_fee_gnf FROM pharmacies WHERE id = $1 AND is_active = true",
       [pharmacyId]
@@ -150,15 +160,8 @@ ordersRouter.post("/request", requireAuth, async (req, res) => {
       );
     }
 
-    await client.query("COMMIT");
-    notifyOrderChange(order);
-    res.status(201).json(order);
-  } catch (err: any) {
-    await client.query("ROLLBACK");
-    res.status(err.status ?? 500).json({ error: err.message ?? "Internal error" });
-  } finally {
-    client.release();
-  }
+    return { order, payload: order };
+  });
 });
 
 const manualOrderSchema = z.object({
@@ -187,10 +190,7 @@ ordersRouter.post("/manual", requireAuth, requireRole("admin", "pharmacy_partner
   const allowedPharmacy = await canManagePharmacy(req.user!.sub, req.user!.role, pharmacyId);
   if (!allowedPharmacy) return res.status(403).json({ error: "Forbidden" });
 
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-
+  await createOrderInTransaction(res, async (client) => {
     let customer = (await client.query("SELECT * FROM users WHERE phone = $1", [customerPhone])).rows[0];
     if (!customer) {
       const placeholderEmail = `guest-${customerPhone.replace(/[^0-9]/g, "")}@pharmacy-galimo.local`;
@@ -221,15 +221,11 @@ ordersRouter.post("/manual", requireAuth, requireRole("admin", "pharmacy_partner
       );
     }
 
-    await client.query("COMMIT");
-    notifyOrderChange(order);
-    res.status(201).json({ ...order, customer: { id: customer.id, phone: customer.phone, display_name: customer.display_name } });
-  } catch (err: any) {
-    await client.query("ROLLBACK");
-    res.status(err.status ?? 500).json({ error: err.message ?? "Internal error" });
-  } finally {
-    client.release();
-  }
+    return {
+      order,
+      payload: { ...order, customer: { id: customer.id, phone: customer.phone, display_name: customer.display_name } },
+    };
+  });
 });
 
 const ORDERS_WITH_ITEMS_SELECT = `

@@ -275,6 +275,8 @@ interface Order {
   paymentStatus?: string;
 }
 
+const isOrderPaid = (order: Order) => order.paymentStatus === "paid";
+
 // ============================================================
 // Mapping des commandes vers/depuis l'API réelle (backend/src/routes/orders.ts)
 // ============================================================
@@ -1955,7 +1957,7 @@ function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onBack }:
                  Paiement échoué — réessayer
                </button>
              )}
-             {o.paymentStatus === "paid" && (
+             {isOrderPaid(o) && (
                <button
                  onClick={(e) => { e.stopPropagation(); printOrderTicket(o, getMed); }}
                  className="mt-3 w-full h-10 rounded-xl bg-emerald-50 text-emerald-700 font-semibold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition"
@@ -2169,7 +2171,7 @@ function PharmacistDashboard({ orders, getMed, onOpen, onGoCatalogue, onGoPhoneO
   const terminees = orders.filter((o) => ["delivered", "cancelled", "expired"].includes(o.status));
 
   const gainToday = orders
-    .filter((o) => o.paymentStatus === "paid")
+    .filter(isOrderPaid)
     .reduce((s, o) => s + o.items.reduce((a, i) => a + (i.confirmedPrice || 0) * i.quantity, 0) + (o.deliveryFee || 0), 0);
 
   const list = tab === "nouvelles" ? nouvelles : tab === "en_cours" ? enCours : terminees;
@@ -2229,7 +2231,7 @@ function StatCard({ label, value, tone, small }: { label: string; value: string;
 }
 
 function PharmOrderCard({ order, getMed, onOpen, onMarkDelivered }: { order: Order; getMed: (id: string) => Medicine; onOpen: () => void; onMarkDelivered: () => void }) {
-  const isPaid = (order.status === "accepted" || order.status === "ready") && order.paymentStatus === "paid";
+  const isPaid = (order.status === "accepted" || order.status === "ready") && isOrderPaid(order);
 
   return (
     <div className="ph-card p-4 w-full text-left">
@@ -2279,7 +2281,7 @@ function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onCancel }: {
   onSubmit: (order: Order) => void;
   onCancel: () => void;
 }) {
-  const paymentRefused = order.status === "accepted" && order.paymentStatus !== "paid" && order.paymentStatus !== "processing";
+  const paymentRefused = order.status === "accepted" && !isOrderPaid(order) && order.paymentStatus !== "processing";
   const [items, setItems] = useState<OrderItem[]>(
     order.items.map((i) => {
       const m = getMed(i.medicineId);
@@ -3309,7 +3311,7 @@ function PharmacistStats({ orders, medicines, getMed }: {
       o.items.reduce((s, i) => s + (i.isAvailable === false ? 0 : (i.confirmedPrice || 0) * i.quantity), 0);
     const orderTotal = (o: Order) => orderSubtotal(o) + (o.deliveryFee || 0);
 
-    const paid = orders.filter((o) => o.paymentStatus === "paid");
+    const paid = orders.filter(isOrderPaid);
     const caDay = paid.filter((o) => o.createdAt >= startOfDay.getTime()).reduce((s, o) => s + orderTotal(o), 0);
     const caWeek = paid.filter((o) => o.createdAt >= startOfWeek.getTime()).reduce((s, o) => s + orderTotal(o), 0);
     const caMonth = paid.filter((o) => o.createdAt >= startOfMonth.getTime()).reduce((s, o) => s + orderTotal(o), 0);
