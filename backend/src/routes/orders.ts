@@ -5,7 +5,6 @@ import { requireAuth, requireRole } from "../auth.js";
 import { canManagePharmacy } from "./pharmacies.js";
 import { notifyOrderChange } from "../chat.js";
 import { requestDebit } from "../galimoPartner.js";
-import crypto from "node:crypto";
 
 export const ordersRouter = Router();
 
@@ -305,14 +304,20 @@ ordersRouter.patch("/:id/confirm", requireAuth, async (req, res) => {
   const order = orderResult.rows[0];
 
   if (order.user_id !== req.user!.sub) return res.status(403).json({ error: "Forbidden" });
-  if (order.status !== "awaiting_customer") {
-    return res.status(400).json({ error: "Order is not awaiting confirmation" });
-  }
 
+  // UPDATE conditionnel atomique plutôt qu'un SELECT puis UPDATE séparés :
+  // si deux requêtes arrivent en même temps (double-tap), une seule peut
+  // matcher la condition WHERE et faire la transition ; l'autre reçoit 0 ligne
+  // affectée et échoue proprement au lieu de confirmer la commande deux fois.
   const result = await pool.query(
-    "UPDATE orders SET status = 'pending', updated_at = now() WHERE id = $1 RETURNING *",
+    `UPDATE orders SET status = 'pending', updated_at = now()
+     WHERE id = $1 AND status = 'awaiting_customer'
+     RETURNING *`,
     [order.id]
   );
+  if (!result.rowCount) {
+    return res.status(400).json({ error: "Order is not awaiting confirmation" });
+  }
   notifyOrderChange(result.rows[0]);
   res.json(result.rows[0]);
 });
@@ -324,18 +329,35 @@ ordersRouter.post("/:id/pay", requireAuth, async (req, res) => {
   const order = orderResult.rows[0];
 
   if (order.user_id !== req.user!.sub) return res.status(403).json({ error: "Forbidden" });
-  if (order.status !== "pending" || order.payment_status === "paid") {
-    return res.status(400).json({ error: "Order is not payable" });
+
+  // Verrou atomique : cette commande ne passe en "processing" que si elle
+  // n'y est pas déjà et n'est pas déjà payée. Un SELECT puis UPDATE séparés
+  // laisserait une fenêtre de course où deux requêtes concurrentes (double-tap,
+  // retry réseau) liraient toutes les deux l'état "payable" avant qu'aucune
+  // n'écrive, et déclencheraient chacune un débit Galimo pour la même commande.
+  const claim = await pool.query(
+    `UPDATE orders SET payment_status = 'processing', updated_at = now()
+     WHERE id = $1 AND status = 'pending'
+       AND (payment_status IS NULL OR payment_status NOT IN ('paid', 'processing'))
+     RETURNING *`,
+    [order.id]
+  );
+  if (!claim.rowCount) {
+    return res.status(409).json({ error: "Order is not payable or payment already in progress" });
   }
-  if (order.payment_status === "processing") {
-    return res.status(400).json({ error: "Payment already in progress" });
-  }
+  const claimed = claim.rows[0];
 
   const userResult = await pool.query("SELECT phone FROM users WHERE id = $1", [order.user_id]);
   const phone = userResult.rows[0]?.phone;
-  if (!phone) return res.status(400).json({ error: "No phone number on file for this account" });
+  if (!phone) {
+    await pool.query("UPDATE orders SET payment_status = 'unpaid', updated_at = now() WHERE id = $1", [order.id]);
+    return res.status(400).json({ error: "No phone number on file for this account" });
+  }
 
-  const reference = `PHARM-${order.id.slice(0, 8)}-${crypto.randomBytes(3).toString("hex")}`;
+  // Référence stable par commande (pas de composant aléatoire) : si le débit
+  // échoue et que le client réessaie, on renvoie exactement la même référence
+  // à Galimo au lieu d'en générer une nouvelle à chaque tentative.
+  const reference = claimed.payment_reference || `PHARM-${order.id.slice(0, 8)}`;
 
   // Commission Galimo (10%) sur le prix des médicaments uniquement, ajoutée
   // par-dessus ce que paie le client. Le transport n'est jamais inclus dans
@@ -353,13 +375,20 @@ ordersRouter.post("/:id/pay", requireAuth, async (req, res) => {
     });
 
     const result = await pool.query(
-      `UPDATE orders SET payment_status = 'processing', payment_reference = $1, payment_idrequest = $2, updated_at = now()
+      `UPDATE orders SET payment_reference = $1, payment_idrequest = $2, updated_at = now()
        WHERE id = $3 RETURNING *`,
       [reference, debit.idrequest, order.id]
     );
     notifyOrderChange(result.rows[0]);
     res.json(result.rows[0]);
   } catch (err: any) {
+    // Le débit a échoué : on libère le verrou pour permettre un nouvel essai
+    // au lieu de laisser la commande bloquée en "processing" pour toujours.
+    const reverted = await pool.query(
+      "UPDATE orders SET payment_status = 'unpaid', updated_at = now() WHERE id = $1 RETURNING *",
+      [order.id]
+    );
+    notifyOrderChange(reverted.rows[0]);
     res.status(502).json({ error: err.message ?? "Payment request failed" });
   }
 });

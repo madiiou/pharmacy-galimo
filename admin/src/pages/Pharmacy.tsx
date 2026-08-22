@@ -1152,9 +1152,9 @@ function ClientArea(props: {
   orders: Order[];
   activeOrder: Order | null;
   setActiveOrderId: (id: string | null) => void;
-  acceptOrder: (id: string) => void;
+  acceptOrder: (id: string) => Promise<void>;
   cancelOrder: (id: string) => void;
-  retryPay: (o: Order) => void;
+  retryPay: (o: Order) => Promise<void>;
 }) {
   const {
     view, setView, medicines, pharmacyWhatsapp, pharmacyPhone, getMed, cart, setCart, addToCart,
@@ -1818,10 +1818,21 @@ function OrderSent({ order, getMed, pharmacyWhatsapp, onSeeResponse, onGoHome }:
 function PharmacistResponse({ order, getMed, onAccept, onCancel, onBack }: {
   order: Order;
   getMed: (id: string) => Medicine;
-  onAccept: () => void;
+  onAccept: () => Promise<void>;
   onCancel: () => void;
   onBack: () => void;
 }) {
+  const [submitting, setSubmitting] = useState(false);
+  const handleAccept = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await onAccept();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const available = order.items.filter((i) => i.isAvailable);
   const unavailable = order.items.filter((i) => i.isAvailable === false);
   const allUnavailable = available.length === 0;
@@ -1915,10 +1926,15 @@ function PharmacistResponse({ order, getMed, onAccept, onCancel, onBack }: {
           </div>
 
           <div className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-4 right-4 z-30 space-y-2">
-            <button onClick={onAccept} className="ph-btn-primary w-full h-12 flex items-center justify-center gap-2">
-              <Check className="h-4 w-4" /> Accepter et payer
+            <button
+              onClick={handleAccept}
+              disabled={submitting}
+              className="ph-btn-primary w-full h-12 flex items-center justify-center gap-2 disabled:opacity-60"
+            >
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              {submitting ? "Envoi en cours…" : "Accepter et payer"}
             </button>
-            <button onClick={onCancel} className="w-full h-11 rounded-full bg-white border border-red-300 text-red-600 font-semibold text-sm active:scale-95 transition">
+            <button onClick={onCancel} disabled={submitting} className="w-full h-11 rounded-full bg-white border border-red-300 text-red-600 font-semibold text-sm active:scale-95 transition disabled:opacity-60">
               Annuler la commande
             </button>
           </div>
@@ -1934,10 +1950,20 @@ function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onBack }:
   getMed: (id: string) => Medicine;
   onOpen: (o: Order) => void;
   onReorder: (o: Order) => void;
-  onRetryPay: (o: Order) => void;
+  onRetryPay: (o: Order) => Promise<void>;
   onBack: () => void;
 }) {
   const canReorder = (s: OrderStatus) => s === "delivered" || s === "accepted" || s === "ready" || s === "cancelled" || s === "expired";
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+  const handleRetryPay = async (o: Order) => {
+    if (retryingId) return;
+    setRetryingId(o.id);
+    try {
+      await onRetryPay(o);
+    } finally {
+      setRetryingId(null);
+    }
+  };
   return (
     <div className="px-4 pt-4 pb-24">
       <div className="flex items-center gap-3 mb-4">
@@ -1976,10 +2002,12 @@ function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onBack }:
              )}
              {o.status === "accepted" && (o.paymentStatus === "unpaid" || !o.paymentStatus) && (
                <button
-                 onClick={(e) => { e.stopPropagation(); onRetryPay(o); }}
-                 className="mt-3 w-full h-10 rounded-xl bg-red-50 text-red-700 font-semibold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition"
+                 onClick={(e) => { e.stopPropagation(); handleRetryPay(o); }}
+                 disabled={retryingId === o.id}
+                 className="mt-3 w-full h-10 rounded-xl bg-red-50 text-red-700 font-semibold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition disabled:opacity-60"
                >
-                 Paiement échoué — réessayer
+                 {retryingId === o.id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                 {retryingId === o.id ? "Envoi en cours…" : "Paiement échoué — réessayer"}
                </button>
              )}
              {isOrderPaid(o) && (
