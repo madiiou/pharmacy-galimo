@@ -886,25 +886,30 @@ export default function Pharmacy() {
   const [pharmacyId, setPharmacyId] = useState<string | null>(null);
   const [pharmacyWhatsapp, setPharmacyWhatsapp] = useState<string | null>(null);
   const [pharmacyPhone, setPharmacyPhone] = useState<string | null>(null);
+  const [pharmacySchedule, setPharmacySchedule] = useState<DaySchedule[]>(DEFAULT_SCHEDULE);
   const [medicines, setMedicines] = useState<Medicine[]>([]);
+
+  type PharmacyFetch = { id: string; whatsapp?: string | null; phone?: string | null; opening_hours?: DaySchedule[] | null };
 
   useEffect(() => {
     (async () => {
       try {
         const mine = getToken()
-          ? await api<{ id: string; whatsapp?: string | null; phone?: string | null }[]>("/pharmacies/mine").catch(() => [])
+          ? await api<PharmacyFetch[]>("/pharmacies/mine").catch(() => [])
           : [];
         if (mine[0]) {
           setPharmacyId(mine[0].id);
           setPharmacyWhatsapp(mine[0].whatsapp ?? null);
           setPharmacyPhone(mine[0].phone ?? null);
+          if (mine[0].opening_hours) setPharmacySchedule(mine[0].opening_hours);
           return;
         }
-        const all = await api<{ id: string; whatsapp?: string | null; phone?: string | null }[]>("/pharmacies");
+        const all = await api<PharmacyFetch[]>("/pharmacies");
         if (all[0]) {
           setPharmacyId(all[0].id);
           setPharmacyPhone(all[0].phone ?? null);
           setPharmacyWhatsapp(all[0].whatsapp ?? null);
+          if (all[0].opening_hours) setPharmacySchedule(all[0].opening_hours);
         }
       } catch {}
     })();
@@ -1057,6 +1062,7 @@ export default function Pharmacy() {
           medicines={medicines}
           pharmacyWhatsapp={pharmacyWhatsapp}
           pharmacyPhone={pharmacyPhone}
+          pharmacySchedule={pharmacySchedule}
           getMed={getMed}
           cart={cart}
           setCart={setCart}
@@ -1122,6 +1128,8 @@ export default function Pharmacy() {
           activeOrder={activePharmOrder}
           setActiveOrderId={setActivePharmOrderId}
           getMed={getMed}
+          pharmacySchedule={pharmacySchedule}
+          setPharmacySchedule={setPharmacySchedule}
         />
       )}
     </div>
@@ -1138,6 +1146,7 @@ function ClientArea(props: {
   medicines: Medicine[];
   pharmacyWhatsapp: string | null;
   pharmacyPhone: string | null;
+  pharmacySchedule: DaySchedule[];
   getMed: (id: string) => Medicine;
   cart: CartLine[];
   setCart: React.Dispatch<React.SetStateAction<CartLine[]>>;
@@ -1157,7 +1166,7 @@ function ClientArea(props: {
   retryPay: (o: Order) => Promise<void>;
 }) {
   const {
-    view, setView, medicines, pharmacyWhatsapp, pharmacyPhone, getMed, cart, setCart, addToCart,
+    view, setView, medicines, pharmacyWhatsapp, pharmacyPhone, pharmacySchedule, getMed, cart, setCart, addToCart,
     selectedMedicine, setSelectedMedicine, submitOrder,
     orders, activeOrder, setActiveOrderId, acceptOrder, cancelOrder, retryPay,
   } = props;
@@ -1171,6 +1180,7 @@ function ClientArea(props: {
           medicines={medicines}
           pharmacyWhatsapp={pharmacyWhatsapp}
           pharmacyPhone={pharmacyPhone}
+          pharmacySchedule={pharmacySchedule}
           onOpenDetail={(m) => { setSelectedMedicine(m); setView("detail"); }}
           onAdd={(m) => addToCart(m.id)}
           onOpenCart={() => setView("cart")}
@@ -1296,10 +1306,11 @@ function ClientTabBar({ view, setView, cartCount, ordersDot }: { view: ClientVie
 }
 
 // ---------- Screen 1: Home ----------
-function PharmacyHome({ medicines, pharmacyWhatsapp, pharmacyPhone, onOpenDetail, onAdd, onOpenCart, cartCount }: {
+function PharmacyHome({ medicines, pharmacyWhatsapp, pharmacyPhone, pharmacySchedule, onOpenDetail, onAdd, onOpenCart, cartCount }: {
   medicines: Medicine[];
   pharmacyWhatsapp: string | null;
   pharmacyPhone: string | null;
+  pharmacySchedule: DaySchedule[];
   onOpenDetail: (m: Medicine) => void;
   onAdd: (m: Medicine) => void;
   onOpenCart: () => void;
@@ -1308,6 +1319,12 @@ function PharmacyHome({ medicines, pharmacyWhatsapp, pharmacyPhone, onOpenDetail
   const [cat, setCat] = useState<Category>("all");
   const [search, setSearch] = useState("");
   const [justAdded, setJustAdded] = useState<Record<string, number>>({});
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  const openStatus = useMemo(() => isPharmacyOpen(pharmacySchedule), [pharmacySchedule, tick]);
   const handleAdd = (m: Medicine) => {
     onAdd(m);
     setJustAdded((p) => ({ ...p, [m.id]: (p[m.id] || 0) + 1 }));
@@ -1347,9 +1364,9 @@ function PharmacyHome({ medicines, pharmacyWhatsapp, pharmacyPhone, onOpenDetail
               </div>
             </div>
             <div className="flex flex-col items-end gap-1.5">
-              <div className={`px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 ${PHARMACY.isOpen ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
-                <span className={`h-1.5 w-1.5 rounded-full ${PHARMACY.isOpen ? "bg-emerald-500" : "bg-red-500"}`} />
-                {PHARMACY.isOpen ? "Ouvert" : "Fermé"}
+              <div className={`px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 ${openStatus.open ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${openStatus.open ? "bg-emerald-500" : "bg-red-500"}`} />
+                {openStatus.open ? "Ouvert" : "Fermé"}
               </div>
               {pharmacyWhatsapp && (
                 <a
@@ -1365,7 +1382,7 @@ function PharmacyHome({ medicines, pharmacyWhatsapp, pharmacyPhone, onOpenDetail
             </div>
           </div>
           <div className="flex items-center gap-1 text-[11px] text-[hsl(var(--ph-ink-soft))] mt-2">
-            <Clock className="h-3 w-3" /> {PHARMACY.hours}
+            <Clock className="h-3 w-3" /> {openStatus.label}
           </div>
           {pharmacyPhone && (
             <a
@@ -2079,7 +2096,7 @@ function StatusBadge({ status, paymentStatus }: { status: OrderStatus; paymentSt
 // PHARMACIST AREA
 // ============================================================
 
-function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedicines, pharmacyId, refreshMedicines, refreshOrders, activeOrder, setActiveOrderId, getMed }: {
+function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedicines, pharmacyId, refreshMedicines, refreshOrders, activeOrder, setActiveOrderId, getMed, pharmacySchedule, setPharmacySchedule }: {
   view: PharmView;
   setView: (v: PharmView) => void;
   orders: Order[];
@@ -2092,6 +2109,8 @@ function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedici
   activeOrder: Order | null;
   setActiveOrderId: (id: string | null) => void;
   getMed: (id: string) => Medicine;
+  pharmacySchedule: DaySchedule[];
+  setPharmacySchedule: React.Dispatch<React.SetStateAction<DaySchedule[]>>;
 }) {
   return (
     <>
@@ -2190,7 +2209,7 @@ function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedici
         <PharmacistStats orders={orders} medicines={medicines} getMed={getMed} />
       )}
       {view === "hours" && (
-        <PharmacistHours />
+        <PharmacistHours pharmacyId={pharmacyId} schedule={pharmacySchedule} setSchedule={setPharmacySchedule} />
       )}
       <PharmTabBar view={view} setView={setView} nouvelles={orders.filter((o) => o.status === "pending_pharmacist").length} />
     </>
@@ -3575,19 +3594,6 @@ const DEFAULT_SCHEDULE: DaySchedule[] = [
   { open: true, from: "09:00", to: "18:00" },
   { open: false, from: "10:00", to: "13:00" },
 ];
-const HOURS_STORAGE_KEY = "pharmacy-hours-v1";
-
-function loadSchedule(): DaySchedule[] {
-  try {
-    const raw = localStorage.getItem(HOURS_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length === 7) return parsed;
-    }
-  } catch {}
-  return DEFAULT_SCHEDULE;
-}
-
 export function isPharmacyOpen(schedule: DaySchedule[], now = new Date()): { open: boolean; label: string } {
   const dayIdx = (now.getDay() + 6) % 7; // Monday=0
   const today = schedule[dayIdx];
@@ -3614,8 +3620,11 @@ export function isPharmacyOpen(schedule: DaySchedule[], now = new Date()): { ope
   return { open: false, label: "Fermé" };
 }
 
-function PharmacistHours() {
-  const [schedule, setSchedule] = useState<DaySchedule[]>(() => loadSchedule());
+function PharmacistHours({ pharmacyId, schedule, setSchedule }: {
+  pharmacyId: string | null;
+  schedule: DaySchedule[];
+  setSchedule: React.Dispatch<React.SetStateAction<DaySchedule[]>>;
+}) {
   const [tick, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 30_000);
@@ -3625,7 +3634,13 @@ function PharmacistHours() {
 
   const save = (next: DaySchedule[]) => {
     setSchedule(next);
-    try { localStorage.setItem(HOURS_STORAGE_KEY, JSON.stringify(next)); } catch {}
+    if (!pharmacyId) return;
+    api(`/pharmacies/${pharmacyId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ openingHours: next }),
+    }).catch((err) => {
+      sonner.error("Échec de l'enregistrement des horaires", { description: (err as Error).message });
+    });
   };
 
   const setDay = (i: number, patch: Partial<DaySchedule>) => {

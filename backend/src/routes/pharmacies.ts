@@ -30,6 +30,8 @@ pharmaciesRouter.get("/:id", async (req, res) => {
   res.json(result.rows[0]);
 });
 
+const daySchedule = z.object({ open: z.boolean(), from: z.string(), to: z.string() });
+
 const pharmacySchema = z.object({
   name: z.string().min(1),
   ownerId: z.string().uuid().nullable().optional(),
@@ -44,6 +46,7 @@ const pharmacySchema = z.object({
   description: z.string().optional(),
   isActive: z.boolean().optional(),
   isVerified: z.boolean().optional(),
+  openingHours: z.array(daySchedule).length(7).optional(),
 });
 
 // Admin only: création d'une pharmacie
@@ -98,12 +101,14 @@ pharmaciesRouter.patch("/:id", requireAuth, requireRole("admin", "pharmacy_partn
        description = COALESCE($11, description),
        is_active = COALESCE($12, is_active),
        is_verified = COALESCE($13, is_verified),
+       opening_hours = COALESCE($14, opening_hours),
        updated_at = now()
-     WHERE id = $14
+     WHERE id = $15
      RETURNING *`,
     [p.name ?? null, p.ownerId ?? null, p.address ?? null, p.neighborhood ?? null, p.city ?? null,
      p.phone ?? null, p.whatsapp ?? null, p.email ?? null, p.deliveryFeeGnf ?? null,
      p.deliveryCities ?? null, p.description ?? null, p.isActive ?? null, p.isVerified ?? null,
+     p.openingHours ? JSON.stringify(p.openingHours) : null,
      req.params.id]
   );
   if (!result.rowCount) return res.status(404).json({ error: "Not found" });
