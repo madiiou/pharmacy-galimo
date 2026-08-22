@@ -1020,7 +1020,7 @@ export default function Pharmacy() {
       setCart([]);
       setClientView("sent");
       sonner.success(`Commande envoyée #${created.id.slice(0, 8).toUpperCase()}`, {
-        description: "La pharmacienne va confirmer les prix sous 30 min.",
+        description: "La pharmacie va confirmer les prix sous 30 min.",
         duration: 3500,
       });
     } catch (err) {
@@ -1524,7 +1524,7 @@ function MedicineDetail({ medicine, onBack, onAdd }: { medicine: Medicine; onBac
           </div>
 
           <div className="mt-4 bg-[hsl(var(--ph-purple)/0.08)] rounded-xl p-3 text-xs text-[hsl(var(--ph-deep))] leading-relaxed">
-            💡 Les prix sont confirmés par la pharmacienne après réception de votre commande.
+            💡 Les prix sont confirmés par la pharmacie après réception de votre commande.
           </div>
         </div>
 
@@ -1638,7 +1638,7 @@ function CartScreen({ cart, getMed, onBack, onUpdate, onRemove, onConfirm }: {
               <div className="text-2xl mb-1">{k === "retrait" ? "🏪" : "🛵"}</div>
               <div className="font-semibold text-sm text-[hsl(var(--ph-ink))]">{k === "retrait" ? "Retrait" : "Livraison"}</div>
               <div className="text-[11px] text-[hsl(var(--ph-ink-soft))] mt-0.5">
-                {k === "retrait" ? "Gratuit" : "Prix fixé par la pharmacienne"}
+                {k === "retrait" ? "Gratuit" : "À négocier avec le livreur"}
               </div>
             </button>
           ))}
@@ -1684,7 +1684,7 @@ function CartScreen({ cart, getMed, onBack, onUpdate, onRemove, onConfirm }: {
           <div>
             <p className="ph-display font-semibold text-sm text-amber-900">Ordonnance nécessaire</p>
             <p className="text-[12px] text-amber-800 mt-1 leading-relaxed">
-              Certains médicaments nécessitent une ordonnance. La <strong>pharmacienne</strong> te la demandera après réception de la commande — tu pourras l'envoyer depuis le suivi.
+              Certains médicaments nécessitent une ordonnance. La <strong>pharmacie</strong> te la demandera après réception de la commande — tu pourras l'envoyer depuis le suivi.
             </p>
           </div>
         </div>
@@ -1694,7 +1694,7 @@ function CartScreen({ cart, getMed, onBack, onUpdate, onRemove, onConfirm }: {
         <div className="text-2xl">ℹ️</div>
         <div>
           <p className="ph-display font-semibold text-sm text-[hsl(var(--ph-deep))]">Prix confirmés après commande</p>
-          <p className="text-xs text-[hsl(var(--ph-ink))] leading-relaxed mt-1">La pharmacienne confirme les prix avant tout paiement. Aucun montant n'est débité maintenant.</p>
+          <p className="text-xs text-[hsl(var(--ph-ink))] leading-relaxed mt-1">La pharmacie confirme les prix avant tout paiement. Aucun montant n'est débité maintenant.</p>
         </div>
       </div>
 
@@ -1718,7 +1718,7 @@ function OrderSent({ order, getMed, pharmacyWhatsapp, onSeeResponse, onGoHome }:
   const needsRx = order.items.some((i) => getMed(i.medicineId).prescription);
   const steps = [
     { key: "sent", label: "Envoyée", icon: "📤" },
-    { key: "pending", label: "En attente pharmacienne", icon: "⏳" },
+    { key: "pending", label: "En attente pharmacie", icon: "⏳" },
     { key: "confirmed", label: "Prix confirmés", icon: "💰" },
     { key: "paid", label: "Paiement", icon: "💳" },
     { key: "delivery", label: "Livraison", icon: "🛵" },
@@ -1776,7 +1776,7 @@ function OrderSent({ order, getMed, pharmacyWhatsapp, onSeeResponse, onGoHome }:
             <div className="flex-1">
               <p className="text-sm font-semibold text-amber-900">Livraison à organiser</p>
               <p className="text-[12px] text-amber-800 mt-1 leading-relaxed">
-                La pharmacienne va vous <strong>appeler</strong> pour vous mettre en relation avec un livreur. Vous conviendrez ensemble du <strong>prix du transport</strong> directement avec lui.
+                La pharmacie va vous <strong>appeler</strong> pour vous mettre en relation avec un livreur. Vous conviendrez ensemble du <strong>prix du transport</strong> directement avec lui.
               </p>
             </div>
           </div>
@@ -1836,7 +1836,7 @@ function PharmacistResponse({ order, getMed, onAccept, onCancel, onBack }: {
           <ArrowLeft className="h-4 w-4" />
         </button>
         <div>
-          <h1 className="ph-display font-bold text-xl">Réponse pharmacienne</h1>
+          <h1 className="ph-display font-bold text-xl">Réponse de la pharmacie</h1>
           <p className="text-xs text-[hsl(var(--ph-ink-soft))]">#{order.ref}</p>
         </div>
       </div>
@@ -1845,7 +1845,7 @@ function PharmacistResponse({ order, getMed, onAccept, onCancel, onBack }: {
         <div className="ph-card p-6 text-center">
           <div className="text-5xl mb-3">😔</div>
           <h2 className="ph-display font-bold text-lg">Aucun médicament disponible</h2>
-          <p className="text-sm text-[hsl(var(--ph-ink-soft))] mt-2">La pharmacienne ne peut satisfaire aucune ligne de votre commande. Elle a été automatiquement annulée.</p>
+          <p className="text-sm text-[hsl(var(--ph-ink-soft))] mt-2">La pharmacie ne peut satisfaire aucune ligne de votre commande. Elle a été automatiquement annulée.</p>
           <button onClick={onCancel} className="ph-btn-primary w-full h-12 mt-5">OK, retour</button>
         </div>
       ) : (
@@ -2082,7 +2082,6 @@ function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedici
               await api(`/orders/${updated.id}/price`, {
                 method: "PATCH",
                 body: JSON.stringify({
-                  deliveryFee: updated.deliveryFee ?? undefined,
                   items: updated.items.map((i) => ({
                     id: i.itemId,
                     available: !!i.isAvailable,
@@ -2317,14 +2316,12 @@ function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onCancel }: {
       };
     })
   );
-  const [deliveryFee, setDeliveryFee] = useState<string>(order.deliveryFee?.toString() || "");
-
   const setItem = (id: string, patch: Partial<OrderItem>) =>
     setItems((p) => p.map((i) => i.medicineId === id ? { ...i, ...patch } : i));
 
   const availableItems = items.filter((i) => i.isAvailable);
   const subtotal = availableItems.reduce((s, i) => s + (Number(i.confirmedPrice) || 0) * i.quantity, 0);
-  const total = subtotal + (Number(deliveryFee) || 0);
+  const total = subtotal;
   const allUnavailable = availableItems.length === 0;
   const canSubmit = allUnavailable || availableItems.every((i) => Number(i.confirmedPrice) > 0);
 
@@ -2332,7 +2329,6 @@ function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onCancel }: {
     onSubmit({
       ...order,
       items,
-      deliveryFee: Number(deliveryFee) || 0,
       status: allUnavailable ? "cancelled" : "awaiting_client",
     });
   };
@@ -2468,22 +2464,12 @@ function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onCancel }: {
         })}
       </div>
 
-      {!allUnavailable && (
-        <div className="ph-card p-4 mt-4">
-          <label className="text-sm font-semibold flex items-center gap-2">
-            🛵 Frais de transport {order.deliveryMode === "retrait" && <span className="text-[10px] font-medium text-[hsl(var(--ph-ink-soft))]">(optionnel)</span>}
-          </label>
-          <div className="relative mt-2">
-            <input
-              type="number"
-              inputMode="numeric"
-              value={deliveryFee}
-              onChange={(e) => setDeliveryFee(e.target.value)}
-              placeholder="0"
-              className="w-full h-11 px-3 pr-14 rounded-xl bg-[hsl(var(--ph-muted))] text-sm font-semibold outline-none focus:ring-2 focus:ring-[hsl(var(--ph-purple))]"
-            />
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-[hsl(var(--ph-ink-soft))]">GNF</span>
-          </div>
+      {!allUnavailable && order.deliveryMode === "livraison" && (
+        <div className="ph-card p-4 mt-4 flex items-start gap-2.5">
+          <span className="text-lg">🛵</span>
+          <p className="text-xs text-[hsl(var(--ph-ink-soft))] leading-relaxed">
+            Le prix du transport n'est pas inclus ici — tu le négocieras directement avec le livreur après confirmation de la commande.
+          </p>
         </div>
       )}
 
@@ -2493,12 +2479,6 @@ function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onCancel }: {
             <span className="text-[hsl(var(--ph-ink-soft))]">Sous-total</span>
             <span className="font-semibold">{formatGNF(subtotal)}</span>
           </div>
-          {(Number(deliveryFee) || 0) > 0 && (
-            <div className="flex justify-between text-sm">
-              <span className="text-[hsl(var(--ph-ink-soft))]">Transport</span>
-              <span className="font-semibold">{formatGNF(Number(deliveryFee) || 0)}</span>
-            </div>
-          )}
           <div className="border-t border-[hsl(var(--ph-border))] pt-2 flex justify-between items-center">
             <span className="ph-display font-bold">Total pour la pharmacie</span>
             <span className="ph-display font-bold text-lg text-[hsl(var(--ph-purple))]">{formatGNF(total)}</span>
@@ -2691,14 +2671,13 @@ function PhoneOrderCompose({ medicines, pharmacyId, onDone, onBack }: {
   const [customerName, setCustomerName] = useState("");
   const [category, setCategory] = useState<Category>("all");
   const [cart, setCart] = useState<CartLine[]>([]);
-  const [deliveryFee, setDeliveryFee] = useState("15000");
   const [notes, setNotes] = useState("");
   const [sending, setSending] = useState(false);
 
   const getMed = (id: string) => medicines.find((m) => m.id === id)!;
   const filtered = category === "all" ? medicines : medicines.filter((m) => m.category === category);
   const cartCount = cart.reduce((s, l) => s + l.quantity, 0);
-  const cartTotal = cart.reduce((s, l) => s + pharmacistPrice(getMed(l.medicineId)) * l.quantity, 0) + Number(deliveryFee || 0);
+  const cartTotal = cart.reduce((s, l) => s + pharmacistPrice(getMed(l.medicineId)) * l.quantity, 0);
 
   const addToCart = (id: string) => {
     setCart((p) => {
@@ -2720,7 +2699,6 @@ function PhoneOrderCompose({ medicines, pharmacyId, onDone, onBack }: {
           pharmacyId,
           customerPhone,
           customerName: customerName || undefined,
-          deliveryFee: Number(deliveryFee || 0),
           notes: notes || undefined,
           items: cart.map((l) => ({
             medicineId: l.medicineId,
@@ -2864,10 +2842,6 @@ function PhoneOrderCompose({ medicines, pharmacyId, onDone, onBack }: {
           {cart.length === 0 && <p className="py-6 text-center text-sm text-[hsl(var(--ph-ink-soft))]">Panier vide</p>}
         </div>
 
-        <div>
-          <label className="text-xs font-semibold text-[hsl(var(--ph-ink-soft))]">Frais de livraison (GNF)</label>
-          <input type="number" value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value)} className="ph-card w-full mt-1 px-3 py-2.5 text-sm outline-none" />
-        </div>
         <div>
           <label className="text-xs font-semibold text-[hsl(var(--ph-ink-soft))]">Notes</label>
           <input value={notes} onChange={(e) => setNotes(e.target.value)} className="ph-card w-full mt-1 px-3 py-2.5 text-sm outline-none" />

@@ -168,7 +168,6 @@ const manualOrderSchema = z.object({
   pharmacyId: z.string().uuid(),
   customerPhone: z.string().min(1),
   customerName: z.string().optional(),
-  deliveryFee: z.number().int().nonnegative().default(0),
   notes: z.string().optional(),
   items: z.array(z.object({
     medicineId: z.string().uuid().optional(),
@@ -185,7 +184,7 @@ const manualOrderSchema = z.object({
 ordersRouter.post("/manual", requireAuth, requireRole("admin", "pharmacy_partner"), async (req, res) => {
   const parsed = manualOrderSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const { pharmacyId, customerPhone, customerName, deliveryFee, notes, items } = parsed.data;
+  const { pharmacyId, customerPhone, customerName, notes, items } = parsed.data;
 
   const allowedPharmacy = await canManagePharmacy(req.user!.sub, req.user!.role, pharmacyId);
   if (!allowedPharmacy) return res.status(403).json({ error: "Forbidden" });
@@ -204,12 +203,14 @@ ordersRouter.post("/manual", requireAuth, requireRole("admin", "pharmacy_partner
       await client.query("UPDATE users SET display_name = $1 WHERE id = $2", [customerName, customer.id]);
     }
 
-    const totalAmount = deliveryFee + items.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
+    // Le transport n'entre pas dans ce total : son prix est négocié et réglé
+    // directement avec le livreur après confirmation, hors paiement en ligne.
+    const totalAmount = items.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
 
     const orderResult = await client.query(
-      `INSERT INTO orders (user_id, pharmacy_id, status, total_amount, delivery_fee, notes)
-       VALUES ($1,$2,'awaiting_customer',$3,$4,$5) RETURNING *`,
-      [customer.id, pharmacyId, totalAmount, deliveryFee, notes ?? null]
+      `INSERT INTO orders (user_id, pharmacy_id, status, total_amount, notes)
+       VALUES ($1,$2,'awaiting_customer',$3,$4) RETURNING *`,
+      [customer.id, pharmacyId, totalAmount, notes ?? null]
     );
     const order = orderResult.rows[0];
 
@@ -337,10 +338,11 @@ ordersRouter.post("/:id/pay", requireAuth, async (req, res) => {
   const reference = `PHARM-${order.id.slice(0, 8)}-${crypto.randomBytes(3).toString("hex")}`;
 
   // Commission Galimo (10%) sur le prix des médicaments uniquement, ajoutée
-  // par-dessus ce que paie le client — le transport n'est pas commissionné
-  // et la pharmacie reçoit son montant plein.
+  // par-dessus ce que paie le client. Le transport n'est jamais inclus dans
+  // le paiement en ligne : son prix est négocié et réglé directement avec
+  // le livreur après confirmation de la commande.
   const medicinesSubtotal = order.total_amount - order.delivery_fee;
-  const debitAmount = Math.round(medicinesSubtotal * 1.10) + order.delivery_fee;
+  const debitAmount = Math.round(medicinesSubtotal * 1.10);
 
   try {
     const debit = await requestDebit({
@@ -382,7 +384,6 @@ ordersRouter.patch("/:id/cancel", requireAuth, async (req, res) => {
 });
 
 const priceItemsSchema = z.object({
-  deliveryFee: z.number().int().nonnegative().optional(),
   items: z.array(z.object({
     id: z.string().uuid(),
     available: z.boolean(),
@@ -405,7 +406,7 @@ ordersRouter.patch("/:id/price", requireAuth, requireRole("admin", "pharmacy_par
 
   const parsed = priceItemsSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const { deliveryFee, items } = parsed.data;
+  const { items } = parsed.data;
 
   const client = await pool.connect();
   try {
@@ -433,14 +434,15 @@ ordersRouter.patch("/:id/price", requireAuth, requireRole("admin", "pharmacy_par
       "SELECT COALESCE(SUM(subtotal), 0) AS sum FROM order_items WHERE order_id = $1",
       [order.id]
     );
-    const finalDeliveryFee = deliveryFee ?? order.delivery_fee;
-    const totalAmount = Number(totals.rows[0].sum) + finalDeliveryFee;
+    // Le transport n'entre pas dans ce total : son prix est négocié et réglé
+    // directement avec le livreur après confirmation, hors paiement en ligne.
+    const totalAmount = Number(totals.rows[0].sum) + order.delivery_fee;
     const newStatus = anyAvailable ? "awaiting_customer" : "cancelled";
 
     const result = await client.query(
-      `UPDATE orders SET status = $1, total_amount = $2, delivery_fee = $3, updated_at = now()
-       WHERE id = $4 RETURNING *`,
-      [newStatus, totalAmount, finalDeliveryFee, order.id]
+      `UPDATE orders SET status = $1, total_amount = $2, updated_at = now()
+       WHERE id = $3 RETURNING *`,
+      [newStatus, totalAmount, order.id]
     );
 
     await client.query("COMMIT");
