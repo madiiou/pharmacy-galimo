@@ -1072,7 +1072,7 @@ export default function Pharmacy() {
               await api(`/orders/${o.id}/pay`, { method: "POST" });
               await refreshOrders();
               sonner.success("Demande de paiement renvoyée ✓", {
-                description: "Confirme le débit dans ton application Galimo.",
+                description: "Confirmez le débit dans votre application Galimo.",
                 duration: 5000,
               });
             } catch (err) {
@@ -1085,7 +1085,7 @@ export default function Pharmacy() {
               await api(`/orders/${id}/pay`, { method: "POST" });
               await refreshOrders();
               sonner.success("Demande de paiement envoyée ✓", {
-                description: "Confirme le débit dans ton application Galimo pour finaliser.",
+                description: "Confirmez le débit dans votre application Galimo pour finaliser.",
                 duration: 6000,
               });
               setClientView("history");
@@ -1558,9 +1558,9 @@ function CartScreen({ cart, getMed, onBack, onUpdate, onRemove, onConfirm }: {
 
   const handleConfirm = () => {
     if (mode === "livraison") {
-      if (!city) return sonner.error("Choisis ta ville");
+      if (!city) return sonner.error("Choisissez votre ville");
       if (!address.trim() || address.trim().length < 5) {
-        return sonner.error("Précise ton adresse", { description: "Quartier, rue, point de repère…" });
+        return sonner.error("Précisez votre adresse", { description: "Quartier, rue, point de repère…" });
       }
     }
     onConfirm({
@@ -1684,7 +1684,7 @@ function CartScreen({ cart, getMed, onBack, onUpdate, onRemove, onConfirm }: {
           <div>
             <p className="ph-display font-semibold text-sm text-amber-900">Ordonnance nécessaire</p>
             <p className="text-[12px] text-amber-800 mt-1 leading-relaxed">
-              Certains médicaments nécessitent une ordonnance. La <strong>pharmacie</strong> te la demandera après réception de la commande — tu pourras l'envoyer depuis le suivi.
+              Certains médicaments nécessitent une ordonnance. La <strong>pharmacie</strong> vous la demandera après réception de la commande — vous pourrez l'envoyer depuis le suivi.
             </p>
           </div>
         </div>
@@ -1791,7 +1791,7 @@ function OrderSent({ order, getMed, pharmacyWhatsapp, onSeeResponse, onGoHome }:
             <div className="flex-1">
               <p className="text-sm font-bold text-amber-900">Ordonnance nécessaire</p>
               <p className="text-[12px] text-amber-800 mt-1 leading-relaxed">
-                Certains produits de ta commande #{order.ref} nécessitent une ordonnance. Envoie-la en photo directement sur WhatsApp.
+                Certains produits de votre commande #{order.ref} nécessitent une ordonnance. Envoyez-la en photo directement sur WhatsApp.
               </p>
             </div>
           </div>
@@ -1998,7 +1998,7 @@ function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onBack }:
               </div>
              </button>
              {o.status === "accepted" && o.paymentStatus === "processing" && (
-               <p className="mt-2 text-xs text-amber-700 font-medium">⏳ En attente de ta confirmation sur l'app Galimo…</p>
+               <p className="mt-2 text-xs text-amber-700 font-medium">⏳ En attente de votre confirmation sur l'app Galimo…</p>
              )}
              {o.status === "accepted" && (o.paymentStatus === "unpaid" || !o.paymentStatus) && (
                <button
@@ -2496,7 +2496,7 @@ function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onCancel }: {
         <div className="ph-card p-4 mt-4 flex items-start gap-2.5">
           <span className="text-lg">🛵</span>
           <p className="text-xs text-[hsl(var(--ph-ink-soft))] leading-relaxed">
-            Le prix du transport n'est pas inclus ici — tu le négocieras directement avec le livreur après confirmation de la commande.
+            Le prix du transport n'est pas inclus ici — le client le négociera directement avec le livreur après confirmation de la commande.
           </p>
         </div>
       )}
