@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Loader2, Plus, Edit, Building2, TrendingUp, Activity, ShieldCheck, Store, Wallet, AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
@@ -14,6 +14,53 @@ import { useUserRoles } from "../hooks/useUserRoles";
 import { usePharmacies, type Pharmacy } from "../hooks/usePharmacies";
 import { GUINEA_CITIES, DAY_LABELS, DEFAULT_SCHEDULE, isPharmacyOpen, type DaySchedule } from "./Pharmacy";
 import { formatGNF } from "../lib/pharmacy";
+import { api } from "../api";
+
+interface OrderSummary {
+  pharmacy_id: string;
+  total_amount: number;
+  delivery_fee: number;
+  payment_status: string;
+}
+
+interface PharmacyStats {
+  orders: number;
+  paidOrders: number;
+  gmv: number;
+  commission: number;
+}
+
+function usePharmacyStats() {
+  const [orders, setOrders] = useState<OrderSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api<OrderSummary[]>("/orders")
+      .then(setOrders)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const statsByPharmacy = useMemo(() => {
+    const map = new Map<string, PharmacyStats>();
+    for (const o of orders) {
+      const stats = map.get(o.pharmacy_id) ?? { orders: 0, paidOrders: 0, gmv: 0, commission: 0 };
+      stats.orders += 1;
+      if (o.payment_status === "paid") {
+        stats.paidOrders += 1;
+        stats.gmv += o.total_amount;
+        stats.commission += Math.round((o.total_amount - (o.delivery_fee || 0)) * 0.1);
+      }
+      map.set(o.pharmacy_id, stats);
+    }
+    return map;
+  }, [orders]);
+
+  const statsFor = (pharmacyId: string): PharmacyStats =>
+    statsByPharmacy.get(pharmacyId) ?? { orders: 0, paidOrders: 0, gmv: 0, commission: 0 };
+
+  return { statsByPharmacy, statsFor, loading };
+}
 
 function PharmacyDialog({
   pharmacy,
@@ -218,6 +265,7 @@ export default function AdminPharmacies() {
   const navigate = useNavigate();
   const { isAdmin, loading } = useUserRoles();
   const { pharmacies, createPharmacy, updatePharmacy, loading: pharmLoading } = usePharmacies();
+  const { statsByPharmacy, statsFor, loading: statsLoading } = usePharmacyStats();
 
   if (loading || pharmLoading) {
     return (
@@ -267,7 +315,7 @@ export default function AdminPharmacies() {
       </div>
 
       <div className="container mx-auto px-4 py-6 space-y-6">
-        <GalimoKpis pharmacies={pharmacies} />
+        <GalimoKpis pharmacies={pharmacies} statsByPharmacy={statsByPharmacy} />
 
         <Tabs defaultValue="pharmacies" className="w-full">
           <TabsList className="grid w-full grid-cols-4">
@@ -309,7 +357,7 @@ export default function AdminPharmacies() {
                 );
               })()}
               <p className="text-xs text-muted-foreground">
-                {p.total_orders ?? 0} commandes • Owner : {p.owner_id ? p.owner_id.slice(0, 8) + "…" : "aucun"}
+                {statsFor(p.id).orders} commande{statsFor(p.id).orders > 1 ? "s" : ""} ({statsFor(p.id).paidOrders} payée{statsFor(p.id).paidOrders > 1 ? "s" : ""}) • Owner : {p.owner_id ? p.owner_id.slice(0, 8) + "…" : "aucun"}
               </p>
               <PharmacyDialog
                 pharmacy={p}
@@ -330,11 +378,11 @@ export default function AdminPharmacies() {
           </TabsContent>
 
           <TabsContent value="revenus" className="mt-4">
-            <RevenusTab pharmacies={pharmacies} />
+            <RevenusTab pharmacies={pharmacies} statsFor={statsFor} />
           </TabsContent>
 
           <TabsContent value="monitoring" className="mt-4">
-            <MonitoringTab pharmacies={pharmacies} />
+            <MonitoringTab pharmacies={pharmacies} statsFor={statsFor} />
           </TabsContent>
 
           <TabsContent value="controle" className="mt-4">
@@ -348,19 +396,19 @@ export default function AdminPharmacies() {
 
 // ============= Sub-components =============
 
-const AVG_ORDER_GNF = 85_000; // panier moyen estimé
-const COMMISSION_RATE = 0.1;
-
-function GalimoKpis({ pharmacies }: { pharmacies: Pharmacy[] }) {
+function GalimoKpis({ pharmacies, statsByPharmacy }: { pharmacies: Pharmacy[]; statsByPharmacy: Map<string, PharmacyStats> }) {
   const active = pharmacies.filter((p) => p.is_active).length;
-  const totalOrders = pharmacies.reduce((s, p) => s + (p.total_orders ?? 0), 0);
-  const estimatedGmv = totalOrders * AVG_ORDER_GNF;
-  const commissions = estimatedGmv * COMMISSION_RATE;
+  let totalOrders = 0, gmv = 0, commissions = 0;
+  for (const s of statsByPharmacy.values()) {
+    totalOrders += s.orders;
+    gmv += s.gmv;
+    commissions += s.commission;
+  }
 
   const kpis = [
     { label: "Pharmacies actives", value: `${active}/${pharmacies.length}`, icon: Store, color: "text-primary" },
     { label: "Commandes totales", value: totalOrders.toLocaleString(), icon: Activity, color: "text-blue-600" },
-    { label: "GMV estimé", value: `${(estimatedGmv / 1_000_000).toFixed(1)}M GNF`, icon: TrendingUp, color: "text-emerald-600" },
+    { label: "GMV réel (payé)", value: `${(gmv / 1_000_000).toFixed(2)}M GNF`, icon: TrendingUp, color: "text-emerald-600" },
     { label: "Commissions Galimo", value: `${(commissions / 1_000).toFixed(0)}k GNF`, icon: Wallet, color: "text-amber-600" },
   ];
 
@@ -383,13 +431,9 @@ function GalimoKpis({ pharmacies }: { pharmacies: Pharmacy[] }) {
   );
 }
 
-function RevenusTab({ pharmacies }: { pharmacies: Pharmacy[] }) {
+function RevenusTab({ pharmacies, statsFor }: { pharmacies: Pharmacy[]; statsFor: (id: string) => PharmacyStats }) {
   const rows = [...pharmacies]
-    .map((p) => {
-      const orders = p.total_orders ?? 0;
-      const gmv = orders * AVG_ORDER_GNF;
-      return { p, orders, gmv, commission: gmv * COMMISSION_RATE };
-    })
+    .map((p) => ({ p, ...statsFor(p.id) }))
     .sort((a, b) => b.commission - a.commission);
 
   return (
@@ -397,12 +441,12 @@ function RevenusTab({ pharmacies }: { pharmacies: Pharmacy[] }) {
       <CardHeader>
         <CardTitle className="text-base">Commissions Galimo (10%) par pharmacie</CardTitle>
         <p className="text-xs text-muted-foreground">
-          Estimation basée sur un panier moyen de {formatGNF(AVG_ORDER_GNF)}. Les chiffres réels seront disponibles une fois les commandes migrées en base.
+          Chiffres réels calculés à partir des commandes payées (10% du prix des médicaments, hors transport).
         </p>
       </CardHeader>
       <CardContent className="p-0">
         <div className="divide-y">
-          {rows.map(({ p, orders, gmv, commission }, i) => (
+          {rows.map(({ p, orders, paidOrders, gmv, commission }, i) => (
             <div key={p.id} className="flex items-center justify-between p-4">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">
@@ -410,7 +454,7 @@ function RevenusTab({ pharmacies }: { pharmacies: Pharmacy[] }) {
                 </div>
                 <div>
                   <p className="font-medium">{p.name}</p>
-                  <p className="text-xs text-muted-foreground">{p.neighborhood} · {orders} commandes</p>
+                  <p className="text-xs text-muted-foreground">{p.neighborhood} · {orders} commande{orders > 1 ? "s" : ""} ({paidOrders} payée{paidOrders > 1 ? "s" : ""})</p>
                 </div>
               </div>
               <div className="text-right">
@@ -428,7 +472,7 @@ function RevenusTab({ pharmacies }: { pharmacies: Pharmacy[] }) {
   );
 }
 
-function MonitoringTab({ pharmacies }: { pharmacies: Pharmacy[] }) {
+function MonitoringTab({ pharmacies, statsFor }: { pharmacies: Pharmacy[]; statsFor: (id: string) => PharmacyStats }) {
   const inactive = pharmacies.filter((p) => !p.is_active);
   const unverified = pharmacies.filter((p) => !p.is_verified);
   const noOwner = pharmacies.filter((p) => !p.owner_id);
@@ -465,7 +509,7 @@ function MonitoringTab({ pharmacies }: { pharmacies: Pharmacy[] }) {
                   <Badge variant={p.is_active ? "default" : "secondary"}>
                     {p.is_active ? "En ligne" : "Hors ligne"}
                   </Badge>
-                  <span className="text-xs text-muted-foreground">{p.total_orders ?? 0} cmd</span>
+                  <span className="text-xs text-muted-foreground">{statsFor(p.id).orders} cmd</span>
                 </div>
               </div>
             ))}
