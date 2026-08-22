@@ -795,7 +795,7 @@ const CATEGORIES: { id: Category; label: string; emoji: string }[] = [
 ];
 
 const PHARMACY = {
-  name: "Pharmacie Lambangni",
+  name: "Pharmacie Saoudatou",
   city: "Conakry, Lambangni",
   isOpen: true,
   hours: "8h - 22h",
@@ -3193,7 +3193,7 @@ function printOrderTicket(order: Order, getMed: (id: string) => Medicine) {
   // glyphe absent de la police Helvetica de jsPDF (s'affiche comme "/").
   const fmt = (n: number) => n.toLocaleString("fr-FR").replace(/[\u202f\u00a0]/g, " ");
 
-  line("PHARMACIE LAMBANGNI", { bold: true, size: 12, align: "center" });
+  line("PHARMACIE SAOUDATOU", { bold: true, size: 12, align: "center" });
   line("Conakry — Guinee", { size: 8, align: "center" });
   y += 1;
   hr();
