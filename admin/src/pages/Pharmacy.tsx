@@ -915,6 +915,13 @@ export default function Pharmacy() {
     })();
   }, []);
 
+  // Compteur brut de clics (sur les liens WhatsApp) pour voir si les gens
+  // utilisent reellement les canaux de l'appli plutot qu'un canal externe.
+  const logEvent = (type: "whatsapp_contact_click" | "whatsapp_prescription_click") => {
+    if (!pharmacyId) return;
+    api("/events", { method: "POST", body: JSON.stringify({ type, pharmacyId }) }).catch(() => {});
+  };
+
   const refreshMedicines = async () => {
     if (!pharmacyId) return;
     try {
@@ -1063,6 +1070,7 @@ export default function Pharmacy() {
           pharmacyWhatsapp={pharmacyWhatsapp}
           pharmacyPhone={pharmacyPhone}
           pharmacySchedule={pharmacySchedule}
+          logEvent={logEvent}
           getMed={getMed}
           cart={cart}
           setCart={setCart}
@@ -1147,6 +1155,7 @@ function ClientArea(props: {
   pharmacyWhatsapp: string | null;
   pharmacyPhone: string | null;
   pharmacySchedule: DaySchedule[];
+  logEvent: (type: "whatsapp_contact_click" | "whatsapp_prescription_click") => void;
   getMed: (id: string) => Medicine;
   cart: CartLine[];
   setCart: React.Dispatch<React.SetStateAction<CartLine[]>>;
@@ -1166,7 +1175,7 @@ function ClientArea(props: {
   retryPay: (o: Order) => Promise<void>;
 }) {
   const {
-    view, setView, medicines, pharmacyWhatsapp, pharmacyPhone, pharmacySchedule, getMed, cart, setCart, addToCart,
+    view, setView, medicines, pharmacyWhatsapp, pharmacyPhone, pharmacySchedule, logEvent, getMed, cart, setCart, addToCart,
     selectedMedicine, setSelectedMedicine, submitOrder,
     orders, activeOrder, setActiveOrderId, acceptOrder, cancelOrder, retryPay,
   } = props;
@@ -1181,6 +1190,7 @@ function ClientArea(props: {
           pharmacyWhatsapp={pharmacyWhatsapp}
           pharmacyPhone={pharmacyPhone}
           pharmacySchedule={pharmacySchedule}
+          logEvent={logEvent}
           onOpenDetail={(m) => { setSelectedMedicine(m); setView("detail"); }}
           onAdd={(m) => addToCart(m.id)}
           onOpenCart={() => setView("cart")}
@@ -1211,6 +1221,7 @@ function ClientArea(props: {
           order={activeOrder}
           getMed={getMed}
           pharmacyWhatsapp={pharmacyWhatsapp}
+          logEvent={logEvent}
           onSeeResponse={() => setView("response")}
           onGoHome={() => setView("home")}
         />
@@ -1306,11 +1317,12 @@ function ClientTabBar({ view, setView, cartCount, ordersDot }: { view: ClientVie
 }
 
 // ---------- Screen 1: Home ----------
-function PharmacyHome({ medicines, pharmacyWhatsapp, pharmacyPhone, pharmacySchedule, onOpenDetail, onAdd, onOpenCart, cartCount }: {
+function PharmacyHome({ medicines, pharmacyWhatsapp, pharmacyPhone, pharmacySchedule, logEvent, onOpenDetail, onAdd, onOpenCart, cartCount }: {
   medicines: Medicine[];
   pharmacyWhatsapp: string | null;
   pharmacyPhone: string | null;
   pharmacySchedule: DaySchedule[];
+  logEvent: (type: "whatsapp_contact_click" | "whatsapp_prescription_click") => void;
   onOpenDetail: (m: Medicine) => void;
   onAdd: (m: Medicine) => void;
   onOpenCart: () => void;
@@ -1374,6 +1386,7 @@ function PharmacyHome({ medicines, pharmacyWhatsapp, pharmacyPhone, pharmacySche
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="Contacter la pharmacie sur WhatsApp"
+                  onClick={() => logEvent("whatsapp_contact_click")}
                   className="h-8 w-8 rounded-full bg-emerald-500 text-white flex items-center justify-center active:scale-95 shadow-sm"
                 >
                   <WhatsAppIcon className="h-4 w-4" />
@@ -1401,6 +1414,7 @@ function PharmacyHome({ medicines, pharmacyWhatsapp, pharmacyPhone, pharmacySche
             )}`}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={() => logEvent("whatsapp_prescription_click")}
             className="ph-card flex items-center gap-3 p-3.5 !shadow-xl"
             style={{ background: "rgba(255,255,255,0.98)" }}
           >
@@ -1745,10 +1759,11 @@ function CartScreen({ cart, getMed, onBack, onUpdate, onRemove, onConfirm }: {
 }
 
 // ---------- Screen 4: Order Sent ----------
-function OrderSent({ order, getMed, pharmacyWhatsapp, onSeeResponse, onGoHome }: {
+function OrderSent({ order, getMed, pharmacyWhatsapp, logEvent, onSeeResponse, onGoHome }: {
   order: Order;
   getMed: (id: string) => Medicine;
   pharmacyWhatsapp: string | null;
+  logEvent: (type: "whatsapp_contact_click" | "whatsapp_prescription_click") => void;
   onSeeResponse: () => void;
   onGoHome: () => void;
 }) {
@@ -1838,6 +1853,7 @@ function OrderSent({ order, getMed, pharmacyWhatsapp, onSeeResponse, onGoHome }:
             )}`}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={() => logEvent("whatsapp_prescription_click")}
             className="flex items-center justify-center gap-2 h-11 rounded-xl bg-emerald-500 text-white font-semibold text-sm active:scale-[0.98] transition"
           >
             <WhatsAppIcon className="h-4 w-4" /> Envoyer sur WhatsApp

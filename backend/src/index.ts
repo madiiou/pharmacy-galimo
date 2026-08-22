@@ -11,6 +11,7 @@ import { galimoWebhookRouter } from "./routes/galimoWebhook.js";
 import { usersRouter } from "./routes/users.js";
 import { galimoPaymentWebhookRouter } from "./routes/galimoPaymentWebhook.js";
 import { galimoBalanceRouter } from "./routes/galimoBalance.js";
+import { eventsRouter } from "./routes/events.js";
 import { attachChat } from "./chat.js";
 
 // Filet de sécurité : une erreur non attrapée dans une route (ex: contrainte
@@ -47,6 +48,7 @@ app.use("/api/auth/galimo-webhook", galimoWebhookRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/payments/galimo-webhook", galimoPaymentWebhookRouter);
 app.use("/api/galimo-partner", galimoBalanceRouter);
+app.use("/api/events", eventsRouter);
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error("[express error handler]", err);

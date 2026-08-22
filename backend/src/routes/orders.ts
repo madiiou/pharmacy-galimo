@@ -207,8 +207,8 @@ ordersRouter.post("/manual", requireAuth, requireRole("admin", "pharmacy_partner
     const totalAmount = items.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
 
     const orderResult = await client.query(
-      `INSERT INTO orders (user_id, pharmacy_id, status, total_amount, notes)
-       VALUES ($1,$2,'awaiting_customer',$3,$4) RETURNING *`,
+      `INSERT INTO orders (user_id, pharmacy_id, status, total_amount, notes, origin)
+       VALUES ($1,$2,'awaiting_customer',$3,$4,'pharmacist') RETURNING *`,
       [customer.id, pharmacyId, totalAmount, notes ?? null]
     );
     const order = orderResult.rows[0];

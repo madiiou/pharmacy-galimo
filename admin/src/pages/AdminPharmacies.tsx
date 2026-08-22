@@ -24,7 +24,19 @@ interface OrderSummary {
   payment_status: string;
   total_amount: number;
   delivery_fee: number;
+  origin: "client" | "pharmacist";
   created_at: string;
+}
+
+interface EventSummary {
+  type: string;
+  pharmacy_id: string | null;
+}
+
+interface OriginStats {
+  total: number;
+  paid: number;
+  unpaid: number;
 }
 
 interface UserSummary {
@@ -72,16 +84,19 @@ function daysAgo(n: number) {
 function useAdminData() {
   const [orders, setOrders] = useState<OrderSummary[]>([]);
   const [users, setUsers] = useState<UserSummary[]>([]);
+  const [events, setEvents] = useState<EventSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
       api<OrderSummary[]>("/orders").catch(() => []),
       api<UserSummary[]>("/users").catch(() => []),
+      api<EventSummary[]>("/events").catch(() => []),
     ])
-      .then(([o, u]) => {
+      .then(([o, u, e]) => {
         setOrders(o);
         setUsers(u);
+        setEvents(e);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -100,6 +115,31 @@ function useAdminData() {
     }
     return map;
   }, [orders]);
+
+  // Origine des commandes : le client a-t-il initie lui-meme (self-service)
+  // ou est-ce la pharmacie qui a compose un devis telephone pour lui ? Et
+  // dans les deux cas, combien sont vraiment payees via le wallet Galimo -
+  // sert a reperer si la pharmacie fait payer les gens par un autre canal.
+  const originStats = useMemo(() => {
+    const make = (): OriginStats => ({ total: 0, paid: 0, unpaid: 0 });
+    const stats: Record<"client" | "pharmacist", OriginStats> = { client: make(), pharmacist: make() };
+    for (const o of orders) {
+      const bucket = stats[o.origin] ?? stats.client;
+      bucket.total += 1;
+      if (o.payment_status === "paid") bucket.paid += 1;
+      else bucket.unpaid += 1;
+    }
+    return stats;
+  }, [orders]);
+
+  const whatsappStats = useMemo(() => {
+    let contact = 0, prescription = 0;
+    for (const e of events) {
+      if (e.type === "whatsapp_contact_click") contact += 1;
+      else if (e.type === "whatsapp_prescription_click") prescription += 1;
+    }
+    return { contactClicks: contact, prescriptionClicks: prescription };
+  }, [events]);
 
   const statusFunnel = useMemo(() => {
     const map = new Map<string, number>();
@@ -147,7 +187,7 @@ function useAdminData() {
   const statsFor = (pharmacyId: string): PharmacyStats =>
     statsByPharmacy.get(pharmacyId) ?? { orders: 0, paidOrders: 0, gmv: 0, commission: 0 };
 
-  return { statsByPharmacy, statsFor, statusFunnel, clients, clientKpis, loading };
+  return { statsByPharmacy, statsFor, statusFunnel, clients, clientKpis, originStats, whatsappStats, loading };
 }
 
 function PharmacyDialog({
@@ -353,7 +393,7 @@ export default function AdminPharmacies() {
   const navigate = useNavigate();
   const { isAdmin, loading } = useUserRoles();
   const { pharmacies, createPharmacy, updatePharmacy, loading: pharmLoading } = usePharmacies();
-  const { statsByPharmacy, statsFor, statusFunnel, clients, clientKpis, loading: statsLoading } = useAdminData();
+  const { statsByPharmacy, statsFor, statusFunnel, clients, clientKpis, originStats, whatsappStats, loading: statsLoading } = useAdminData();
 
   if (loading || pharmLoading) {
     return (
@@ -475,7 +515,7 @@ export default function AdminPharmacies() {
           </TabsContent>
 
           <TabsContent value="monitoring" className="mt-4">
-            <MonitoringTab pharmacies={pharmacies} statsFor={statsFor} statusFunnel={statusFunnel} />
+            <MonitoringTab pharmacies={pharmacies} statsFor={statsFor} statusFunnel={statusFunnel} originStats={originStats} whatsappStats={whatsappStats} />
           </TabsContent>
 
           <TabsContent value="controle" className="mt-4">
@@ -570,10 +610,12 @@ function RevenusTab({ pharmacies, statsFor }: { pharmacies: Pharmacy[]; statsFor
   );
 }
 
-function MonitoringTab({ pharmacies, statsFor, statusFunnel }: {
+function MonitoringTab({ pharmacies, statsFor, statusFunnel, originStats, whatsappStats }: {
   pharmacies: Pharmacy[];
   statsFor: (id: string) => PharmacyStats;
   statusFunnel: Map<string, number>;
+  originStats: Record<"client" | "pharmacist", OriginStats>;
+  whatsappStats: { contactClicks: number; prescriptionClicks: number };
 }) {
   const inactive = pharmacies.filter((p) => !p.is_active);
   const unverified = pharmacies.filter((p) => !p.is_verified);
@@ -618,6 +660,58 @@ function MonitoringTab({ pharmacies, statsFor, statusFunnel }: {
             );
           })}
           {totalInFunnel === 0 && <p className="text-sm text-muted-foreground">Aucune commande.</p>}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Origine des commandes & paiement réel</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Détecte si les commandes finissent réellement payées via le wallet Galimo, ou si la pharmacie encaisse par un autre canal.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {([
+            { key: "client" as const, label: "Initiées par le client (self-service)" },
+            { key: "pharmacist" as const, label: "Initiées par la pharmacie (devis téléphone)" },
+          ]).map(({ key, label }) => {
+            const s = originStats[key];
+            const pct = s.total ? Math.round((s.paid / s.total) * 100) : 0;
+            return (
+              <div key={key} className="flex items-center justify-between text-sm border-b last:border-0 pb-2 last:pb-0">
+                <div>
+                  <p className="font-medium">{label}</p>
+                  <p className="text-xs text-muted-foreground">{s.total} commande{s.total > 1 ? "s" : ""} au total</p>
+                </div>
+                <div className="text-right">
+                  <p className={`font-bold ${pct >= 70 ? "text-emerald-600" : pct > 0 ? "text-amber-600" : "text-red-600"}`}>
+                    {s.paid} payée{s.paid > 1 ? "s" : ""} ({pct}%)
+                  </p>
+                  <p className="text-xs text-muted-foreground">{s.unpaid} non payée{s.unpaid > 1 ? "s" : ""}</p>
+                </div>
+              </div>
+            );
+          })}
+          <p className="text-xs text-muted-foreground pt-1">
+            Un taux de paiement bas — surtout sur les devis téléphone — peut vouloir dire que la pharmacie fait payer les clients directement plutôt que via l'appli.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Clics WhatsApp</CardTitle>
+          <p className="text-xs text-muted-foreground">Nombre de fois où les boutons WhatsApp ont été cliqués côté client.</p>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 gap-3">
+          <div>
+            <p className="text-xs text-muted-foreground">Bouton contact pharmacie</p>
+            <p className="text-lg font-bold mt-1">{whatsappStats.contactClicks}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Envoyer une ordonnance</p>
+            <p className="text-lg font-bold mt-1">{whatsappStats.prescriptionClicks}</p>
+          </div>
         </CardContent>
       </Card>
 
