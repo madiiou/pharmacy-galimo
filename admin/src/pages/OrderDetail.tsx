@@ -41,6 +41,8 @@ export function OrderDetail() {
   const [order, setOrder] = useState<OrderDetailData | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
@@ -71,7 +73,16 @@ export function OrderDetail() {
 
   async function confirmOrder() {
     if (!id) return;
-    setOrder(await api(`/orders/${id}/confirm`, { method: "PATCH" }));
+    setConfirming(true);
+    setConfirmError(null);
+    try {
+      await api(`/orders/${id}/confirm`, { method: "PATCH" });
+      setOrder(await api(`/orders/${id}/pay`, { method: "POST" }));
+    } catch (err) {
+      setConfirmError((err as Error).message);
+    } finally {
+      setConfirming(false);
+    }
   }
 
   function sendMessage(e: FormEvent) {
@@ -113,10 +124,11 @@ export function OrderDetail() {
         {order.status === "awaiting_customer" && user?.id === order.user_id && (
           <div className="mt-4 border-t pt-4">
             <p className="text-sm text-gray-600 mb-2">
-              Voici le devis préparé par la pharmacie. Confirmez pour valider la commande, puis réglez auprès de la pharmacie (mobile money ou espèces à la livraison).
+              Voici le devis préparé par la pharmacie. Confirmez pour valider la commande : le paiement sera débité automatiquement de votre wallet Galimo.
             </p>
-            <button onClick={confirmOrder} className="bg-green-600 text-white rounded px-4 py-2">
-              Confirmer la commande
+            {confirmError && <p className="text-sm text-red-600 mb-2">{confirmError}</p>}
+            <button onClick={confirmOrder} disabled={confirming} className="bg-green-600 text-white rounded px-4 py-2 disabled:opacity-60">
+              {confirming ? "Envoi en cours…" : "Confirmer et payer"}
             </button>
           </div>
         )}

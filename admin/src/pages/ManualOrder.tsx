@@ -35,7 +35,6 @@ export function ManualOrder() {
   const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerName, setCustomerName] = useState("");
-  const [deliveryFee, setDeliveryFee] = useState("0");
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<ManualItem[]>([emptyItem()]);
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +65,7 @@ export function ManualOrder() {
     updateItem(index, { medicineId, itemName: "", unitPrice: med?.price ?? 0 });
   }
 
-  const total = items.reduce((sum, it) => sum + it.unitPrice * it.quantity, 0) + Number(deliveryFee || 0);
+  const total = items.reduce((sum, it) => sum + it.unitPrice * it.quantity, 0);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -79,7 +78,6 @@ export function ManualOrder() {
           pharmacyId,
           customerPhone,
           customerName: customerName || undefined,
-          deliveryFee: Number(deliveryFee || 0),
           notes: notes || undefined,
           items: items
             .filter((it) => it.medicineId || it.itemName)
@@ -170,16 +168,13 @@ export function ManualOrder() {
           <button type="button" onClick={() => setItems((prev) => [...prev, emptyItem()])} className="text-sm text-green-700 mt-2">+ Ajouter un article</button>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-sm font-medium mb-1">Frais de livraison (GNF)</label>
-            <input type="number" min={0} value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value)} className="border rounded px-2 py-1 w-full" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Notes</label>
-            <input value={notes} onChange={(e) => setNotes(e.target.value)} className="border rounded px-2 py-1 w-full" />
-          </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Notes</label>
+          <input value={notes} onChange={(e) => setNotes(e.target.value)} className="border rounded px-2 py-1 w-full" />
         </div>
+        <p className="text-xs text-gray-500">
+          Le transport n'est pas inclus ici : il se négocie directement avec le livreur après confirmation de la commande.
+        </p>
 
         <p className="font-medium">Total : {formatGNF(total)}</p>
 

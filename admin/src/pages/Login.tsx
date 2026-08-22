@@ -15,7 +15,7 @@ export function Login() {
     setError(null);
     try {
       await login(email, password);
-      navigate(searchParams.get("redirect") || "/pharmacies");
+      navigate(searchParams.get("redirect") || "/");
     } catch (err) {
       setError((err as Error).message);
     }

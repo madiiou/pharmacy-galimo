@@ -3,7 +3,6 @@ import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { Login } from "./pages/Login";
 import { Home } from "./pages/Home";
-import { Pharmacies } from "./pages/Pharmacies";
 import { Medicines } from "./pages/Medicines";
 import { Orders } from "./pages/Orders";
 import { OrderDetail } from "./pages/OrderDetail";
@@ -28,7 +27,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/shop" element={<Pharmacy />} />
           <Route path="/admin-pharmacies" element={<RequireAuth><AdminPharmacies /></RequireAuth>} />
-          <Route path="/pharmacies" element={<RequireAuth><Pharmacies /></RequireAuth>} />
+          <Route path="/pharmacies" element={<Navigate to="/admin-pharmacies" replace />} />
           <Route path="/medicines" element={<RequireAuth><Medicines /></RequireAuth>} />
           <Route path="/orders" element={<RequireAuth><Orders /></RequireAuth>} />
           <Route path="/orders/new" element={<RequireAuth><ManualOrder /></RequireAuth>} />

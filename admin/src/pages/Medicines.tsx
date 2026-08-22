@@ -15,8 +15,18 @@ interface Medicine {
   price: number;
   category?: string;
   in_stock: boolean;
+  requires_prescription: boolean;
   pharmacy_id: string;
 }
+
+const CATEGORIES = [
+  { id: "fievre", label: "Fièvre" },
+  { id: "antibio", label: "Antibiotiques" },
+  { id: "vitamines", label: "Vitamines" },
+  { id: "cardio", label: "Cardio" },
+  { id: "soins", label: "Soins" },
+  { id: "bebe", label: "Bébé" },
+];
 
 export function Medicines() {
   const { user } = useAuth();
@@ -25,7 +35,9 @@ export function Medicines() {
   const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
-  const [category, setCategory] = useState("");
+  const [category, setCategory] = useState("soins");
+  const [requiresPrescription, setRequiresPrescription] = useState(false);
+  const [inStock, setInStock] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -50,11 +62,20 @@ export function Medicines() {
     try {
       await api("/medicines", {
         method: "POST",
-        body: JSON.stringify({ pharmacyId, name, price: Number(price), category }),
+        body: JSON.stringify({
+          pharmacyId,
+          name,
+          price: Number(price),
+          category,
+          requiresPrescription,
+          inStock,
+        }),
       });
       setName("");
       setPrice("");
-      setCategory("");
+      setCategory("soins");
+      setRequiresPrescription(false);
+      setInStock(true);
       api<Medicine[]>(`/medicines?pharmacyId=${pharmacyId}`).then(setMedicines);
     } catch (err) {
       setError((err as Error).message);
@@ -77,7 +98,17 @@ export function Medicines() {
           {error && <p className="text-red-600 text-sm w-full">{error}</p>}
           <input placeholder="Nom" value={name} onChange={(e) => setName(e.target.value)} className="border rounded px-2 py-1" required />
           <input placeholder="Prix (GNF)" type="number" value={price} onChange={(e) => setPrice(e.target.value)} className="border rounded px-2 py-1" required />
-          <input placeholder="Catégorie" value={category} onChange={(e) => setCategory(e.target.value)} className="border rounded px-2 py-1" />
+          <select value={category} onChange={(e) => setCategory(e.target.value)} className="border rounded px-2 py-1">
+            {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+          <label className="flex items-center gap-1.5 text-sm px-2">
+            <input type="checkbox" checked={requiresPrescription} onChange={(e) => setRequiresPrescription(e.target.checked)} />
+            Ordonnance requise
+          </label>
+          <label className="flex items-center gap-1.5 text-sm px-2">
+            <input type="checkbox" checked={inStock} onChange={(e) => setInStock(e.target.checked)} />
+            En stock
+          </label>
           <button type="submit" className="bg-green-600 text-white rounded px-4 py-1">Ajouter</button>
         </form>
       )}
@@ -87,7 +118,10 @@ export function Medicines() {
           <div key={m.id} className="bg-white p-4 rounded shadow flex justify-between">
             <div>
               <p className="font-medium">{m.name}</p>
-              <p className="text-sm text-gray-500">{m.category}</p>
+              <p className="text-sm text-gray-500">
+                {CATEGORIES.find((c) => c.id === m.category)?.label ?? m.category}
+                {m.requires_prescription && <span className="text-amber-600 font-medium"> · Ordonnance</span>}
+              </p>
             </div>
             <div className="text-right">
               <p className="font-medium">{formatGNF(m.price)}</p>
