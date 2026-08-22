@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Loader2, Plus, Edit, Building2, TrendingUp, Activity, ShieldCheck, Store, Wallet, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, Edit, Building2, TrendingUp, Activity, ShieldCheck, Store, Wallet, AlertTriangle, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -17,10 +17,24 @@ import { formatGNF } from "../lib/pharmacy";
 import { api } from "../api";
 
 interface OrderSummary {
+  id: string;
   pharmacy_id: string;
+  user_id: string;
+  status: string;
+  payment_status: string;
   total_amount: number;
   delivery_fee: number;
-  payment_status: string;
+  created_at: string;
+}
+
+interface UserSummary {
+  id: string;
+  email: string;
+  display_name: string | null;
+  phone: string | null;
+  role: string;
+  external_id: string | null;
+  created_at: string;
 }
 
 interface PharmacyStats {
@@ -30,14 +44,45 @@ interface PharmacyStats {
   commission: number;
 }
 
-function usePharmacyStats() {
+export interface ClientStats {
+  user: UserSummary;
+  orders: number;
+  paidOrders: number;
+  spent: number;
+  lastOrderAt: string | null;
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  awaiting_pharmacist: "En attente pharmacie",
+  awaiting_customer: "Devis envoyé",
+  pending: "Confirmée",
+  confirmed: "Confirmée",
+  preparing: "Préparation",
+  delivering: "En livraison",
+  delivered: "Livrée",
+  cancelled: "Annulée",
+};
+
+function daysAgo(n: number) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d;
+}
+
+function useAdminData() {
   const [orders, setOrders] = useState<OrderSummary[]>([]);
+  const [users, setUsers] = useState<UserSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api<OrderSummary[]>("/orders")
-      .then(setOrders)
-      .catch(() => {})
+    Promise.all([
+      api<OrderSummary[]>("/orders").catch(() => []),
+      api<UserSummary[]>("/users").catch(() => []),
+    ])
+      .then(([o, u]) => {
+        setOrders(o);
+        setUsers(u);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -56,10 +101,53 @@ function usePharmacyStats() {
     return map;
   }, [orders]);
 
+  const statusFunnel = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const o of orders) map.set(o.status, (map.get(o.status) ?? 0) + 1);
+    return map;
+  }, [orders]);
+
+  const clients: ClientStats[] = useMemo(() => {
+    const ordersByUser = new Map<string, OrderSummary[]>();
+    for (const o of orders) {
+      const list = ordersByUser.get(o.user_id) ?? [];
+      list.push(o);
+      ordersByUser.set(o.user_id, list);
+    }
+    return users
+      .filter((u) => u.role === "user")
+      .map((user) => {
+        const userOrders = ordersByUser.get(user.id) ?? [];
+        const paid = userOrders.filter((o) => o.payment_status === "paid");
+        const lastOrderAt = userOrders.length
+          ? userOrders.reduce((max, o) => (o.created_at > max ? o.created_at : max), userOrders[0].created_at)
+          : null;
+        return {
+          user,
+          orders: userOrders.length,
+          paidOrders: paid.length,
+          spent: paid.reduce((s, o) => s + o.total_amount, 0),
+          lastOrderAt,
+        };
+      });
+  }, [orders, users]);
+
+  const clientKpis = useMemo(() => {
+    const weekAgo = daysAgo(7).toISOString();
+    const monthAgo = daysAgo(30).toISOString();
+    return {
+      total: clients.length,
+      newThisWeek: clients.filter((c) => c.user.created_at >= weekAgo).length,
+      newThisMonth: clients.filter((c) => c.user.created_at >= monthAgo).length,
+      repeatCustomers: clients.filter((c) => c.orders > 1).length,
+      withOrders: clients.filter((c) => c.orders > 0).length,
+    };
+  }, [clients]);
+
   const statsFor = (pharmacyId: string): PharmacyStats =>
     statsByPharmacy.get(pharmacyId) ?? { orders: 0, paidOrders: 0, gmv: 0, commission: 0 };
 
-  return { statsByPharmacy, statsFor, loading };
+  return { statsByPharmacy, statsFor, statusFunnel, clients, clientKpis, loading };
 }
 
 function PharmacyDialog({
@@ -265,7 +353,7 @@ export default function AdminPharmacies() {
   const navigate = useNavigate();
   const { isAdmin, loading } = useUserRoles();
   const { pharmacies, createPharmacy, updatePharmacy, loading: pharmLoading } = usePharmacies();
-  const { statsByPharmacy, statsFor, loading: statsLoading } = usePharmacyStats();
+  const { statsByPharmacy, statsFor, statusFunnel, clients, clientKpis, loading: statsLoading } = useAdminData();
 
   if (loading || pharmLoading) {
     return (
@@ -315,11 +403,12 @@ export default function AdminPharmacies() {
       </div>
 
       <div className="container mx-auto px-4 py-6 space-y-6">
-        <GalimoKpis pharmacies={pharmacies} statsByPharmacy={statsByPharmacy} />
+        <GalimoKpis pharmacies={pharmacies} statsByPharmacy={statsByPharmacy} clientKpis={clientKpis} />
 
         <Tabs defaultValue="pharmacies" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="pharmacies"><Building2 className="h-4 w-4 mr-1" />Pharmacies</TabsTrigger>
+            <TabsTrigger value="clients"><Users className="h-4 w-4 mr-1" />Clients</TabsTrigger>
             <TabsTrigger value="revenus"><TrendingUp className="h-4 w-4 mr-1" />Revenus</TabsTrigger>
             <TabsTrigger value="monitoring"><Activity className="h-4 w-4 mr-1" />Monitoring</TabsTrigger>
             <TabsTrigger value="controle"><ShieldCheck className="h-4 w-4 mr-1" />Contrôle</TabsTrigger>
@@ -377,12 +466,16 @@ export default function AdminPharmacies() {
             </div>
           </TabsContent>
 
+          <TabsContent value="clients" className="mt-4">
+            <ClientsTab clients={clients} clientKpis={clientKpis} />
+          </TabsContent>
+
           <TabsContent value="revenus" className="mt-4">
             <RevenusTab pharmacies={pharmacies} statsFor={statsFor} />
           </TabsContent>
 
           <TabsContent value="monitoring" className="mt-4">
-            <MonitoringTab pharmacies={pharmacies} statsFor={statsFor} />
+            <MonitoringTab pharmacies={pharmacies} statsFor={statsFor} statusFunnel={statusFunnel} />
           </TabsContent>
 
           <TabsContent value="controle" className="mt-4">
@@ -396,7 +489,11 @@ export default function AdminPharmacies() {
 
 // ============= Sub-components =============
 
-function GalimoKpis({ pharmacies, statsByPharmacy }: { pharmacies: Pharmacy[]; statsByPharmacy: Map<string, PharmacyStats> }) {
+function GalimoKpis({ pharmacies, statsByPharmacy, clientKpis }: {
+  pharmacies: Pharmacy[];
+  statsByPharmacy: Map<string, PharmacyStats>;
+  clientKpis: { total: number; newThisWeek: number; withOrders: number };
+}) {
   const active = pharmacies.filter((p) => p.is_active).length;
   let totalOrders = 0, gmv = 0, commissions = 0;
   for (const s of statsByPharmacy.values()) {
@@ -407,13 +504,14 @@ function GalimoKpis({ pharmacies, statsByPharmacy }: { pharmacies: Pharmacy[]; s
 
   const kpis = [
     { label: "Pharmacies actives", value: `${active}/${pharmacies.length}`, icon: Store, color: "text-primary" },
+    { label: "Clients", value: `${clientKpis.total} (+${clientKpis.newThisWeek}/7j)`, icon: Users, color: "text-purple-600" },
     { label: "Commandes totales", value: totalOrders.toLocaleString(), icon: Activity, color: "text-blue-600" },
     { label: "GMV réel (payé)", value: `${(gmv / 1_000_000).toFixed(2)}M GNF`, icon: TrendingUp, color: "text-emerald-600" },
     { label: "Commissions Galimo", value: `${(commissions / 1_000).toFixed(0)}k GNF`, icon: Wallet, color: "text-amber-600" },
   ];
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
       {kpis.map((k) => (
         <Card key={k.label}>
           <CardContent className="p-4">
@@ -472,10 +570,16 @@ function RevenusTab({ pharmacies, statsFor }: { pharmacies: Pharmacy[]; statsFor
   );
 }
 
-function MonitoringTab({ pharmacies, statsFor }: { pharmacies: Pharmacy[]; statsFor: (id: string) => PharmacyStats }) {
+function MonitoringTab({ pharmacies, statsFor, statusFunnel }: {
+  pharmacies: Pharmacy[];
+  statsFor: (id: string) => PharmacyStats;
+  statusFunnel: Map<string, number>;
+}) {
   const inactive = pharmacies.filter((p) => !p.is_active);
   const unverified = pharmacies.filter((p) => !p.is_verified);
   const noOwner = pharmacies.filter((p) => !p.owner_id);
+  const funnelOrder = ["awaiting_pharmacist", "awaiting_customer", "pending", "confirmed", "preparing", "delivering", "delivered", "cancelled"];
+  const totalInFunnel = Array.from(statusFunnel.values()).reduce((s, n) => s + n, 0);
 
   return (
     <div className="space-y-4">
@@ -490,6 +594,30 @@ function MonitoringTab({ pharmacies, statsFor }: { pharmacies: Pharmacy[]; stats
           <AlertRow label="Pharmacies inactives" count={inactive.length} items={inactive.map((p) => p.name)} />
           <AlertRow label="Pharmacies non vérifiées" count={unverified.length} items={unverified.map((p) => p.name)} />
           <AlertRow label="Sans propriétaire assigné" count={noOwner.length} items={noOwner.map((p) => p.name)} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Entonnoir des commandes</CardTitle>
+          <p className="text-xs text-muted-foreground">Répartition de toutes les commandes par statut actuel.</p>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {funnelOrder.map((status) => {
+            const count = statusFunnel.get(status) ?? 0;
+            const pct = totalInFunnel ? Math.round((count / totalInFunnel) * 100) : 0;
+            if (count === 0) return null;
+            return (
+              <div key={status} className="flex items-center gap-3 text-sm">
+                <span className="w-40 flex-shrink-0 text-muted-foreground">{STATUS_LABELS[status] ?? status}</span>
+                <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                  <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
+                </div>
+                <span className="w-16 flex-shrink-0 text-right font-medium">{count} ({pct}%)</span>
+              </div>
+            );
+          })}
+          {totalInFunnel === 0 && <p className="text-sm text-muted-foreground">Aucune commande.</p>}
         </CardContent>
       </Card>
 
@@ -530,6 +658,64 @@ function AlertRow({ label, count, items }: { label: string; count: number; items
         )}
       </div>
       <Badge variant={count > 0 ? "destructive" : "secondary"}>{count}</Badge>
+    </div>
+  );
+}
+
+function ClientsTab({ clients, clientKpis }: {
+  clients: ClientStats[];
+  clientKpis: { total: number; newThisWeek: number; newThisMonth: number; repeatCustomers: number; withOrders: number };
+}) {
+  const topClients = [...clients].sort((a, b) => b.spent - a.spent).slice(0, 20);
+  const repeatRate = clientKpis.withOrders ? Math.round((clientKpis.repeatCustomers / clientKpis.withOrders) * 100) : 0;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { label: "Clients inscrits", value: clientKpis.total },
+          { label: "Nouveaux (30j)", value: clientKpis.newThisMonth },
+          { label: "Ont déjà commandé", value: clientKpis.withOrders },
+          { label: "Clients fidèles", value: `${clientKpis.repeatCustomers} (${repeatRate}%)` },
+        ].map((k) => (
+          <Card key={k.label}>
+            <CardContent className="p-4">
+              <p className="text-xs text-muted-foreground">{k.label}</p>
+              <p className="text-lg font-bold mt-1">{k.value}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Meilleurs clients</CardTitle>
+          <p className="text-xs text-muted-foreground">Classés par montant total payé (toutes pharmacies confondues).</p>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="divide-y">
+            {topClients.filter((c) => c.orders > 0).map((c, i) => (
+              <div key={c.user.id} className="flex items-center justify-between p-3 text-sm">
+                <div className="flex items-center gap-3">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold flex-shrink-0">
+                    {i + 1}
+                  </div>
+                  <div>
+                    <p className="font-medium">{c.user.display_name || c.user.phone || c.user.email}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {c.user.phone ?? c.user.email} · {c.orders} commande{c.orders > 1 ? "s" : ""} ({c.paidOrders} payée{c.paidOrders > 1 ? "s" : ""})
+                    </p>
+                  </div>
+                </div>
+                <p className="font-bold text-emerald-600">{formatGNF(c.spent)}</p>
+              </div>
+            ))}
+            {topClients.filter((c) => c.orders > 0).length === 0 && (
+              <p className="p-8 text-center text-sm text-muted-foreground">Aucun client n'a encore commandé.</p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
