@@ -1377,6 +1377,26 @@ function PharmacyHome({ medicines, pharmacyWhatsapp, pharmacyPhone, onOpenDetail
           )}
         </div>
 
+        {pharmacyWhatsapp && (
+          <a
+            href={`https://wa.me/${pharmacyWhatsapp.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(
+              "Bonjour, voici mon ordonnance."
+            )}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ph-card flex items-center gap-3 p-3.5 !shadow-xl"
+            style={{ background: "rgba(255,255,255,0.98)" }}
+          >
+            <div className="h-10 w-10 rounded-full bg-emerald-500 text-white flex items-center justify-center flex-shrink-0">
+              <WhatsAppIcon className="h-5 w-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="ph-display font-bold text-sm" style={{ color: "hsl(var(--ph-deep))" }}>Envoyer une ordonnance</p>
+              <p className="text-[11px] text-[hsl(var(--ph-ink-soft))]">Photo directement sur WhatsApp</p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-[hsl(var(--ph-ink-soft))] flex-shrink-0" />
+          </a>
+        )}
       </div>
 
       <div className="ph-gradient text-white sticky top-[92px] z-30 px-4 pt-3 pb-3 shadow-md">
