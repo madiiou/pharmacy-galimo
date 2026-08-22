@@ -877,22 +877,25 @@ export default function Pharmacy() {
 
   const [pharmacyId, setPharmacyId] = useState<string | null>(null);
   const [pharmacyWhatsapp, setPharmacyWhatsapp] = useState<string | null>(null);
+  const [pharmacyPhone, setPharmacyPhone] = useState<string | null>(null);
   const [medicines, setMedicines] = useState<Medicine[]>([]);
 
   useEffect(() => {
     (async () => {
       try {
         const mine = getToken()
-          ? await api<{ id: string; whatsapp?: string | null }[]>("/pharmacies/mine").catch(() => [])
+          ? await api<{ id: string; whatsapp?: string | null; phone?: string | null }[]>("/pharmacies/mine").catch(() => [])
           : [];
         if (mine[0]) {
           setPharmacyId(mine[0].id);
           setPharmacyWhatsapp(mine[0].whatsapp ?? null);
+          setPharmacyPhone(mine[0].phone ?? null);
           return;
         }
-        const all = await api<{ id: string; whatsapp?: string | null }[]>("/pharmacies");
+        const all = await api<{ id: string; whatsapp?: string | null; phone?: string | null }[]>("/pharmacies");
         if (all[0]) {
           setPharmacyId(all[0].id);
+          setPharmacyPhone(all[0].phone ?? null);
           setPharmacyWhatsapp(all[0].whatsapp ?? null);
         }
       } catch {}
@@ -1045,6 +1048,7 @@ export default function Pharmacy() {
           setView={setClientView}
           medicines={medicines}
           pharmacyWhatsapp={pharmacyWhatsapp}
+          pharmacyPhone={pharmacyPhone}
           getMed={getMed}
           cart={cart}
           setCart={setCart}
@@ -1125,6 +1129,7 @@ function ClientArea(props: {
   setView: (v: ClientView) => void;
   medicines: Medicine[];
   pharmacyWhatsapp: string | null;
+  pharmacyPhone: string | null;
   getMed: (id: string) => Medicine;
   cart: CartLine[];
   setCart: React.Dispatch<React.SetStateAction<CartLine[]>>;
@@ -1144,7 +1149,7 @@ function ClientArea(props: {
   retryPay: (o: Order) => void;
 }) {
   const {
-    view, setView, medicines, pharmacyWhatsapp, getMed, cart, setCart, addToCart,
+    view, setView, medicines, pharmacyWhatsapp, pharmacyPhone, getMed, cart, setCart, addToCart,
     selectedMedicine, setSelectedMedicine, submitOrder,
     orders, activeOrder, setActiveOrderId, acceptOrder, cancelOrder, retryPay,
   } = props;
@@ -1157,6 +1162,7 @@ function ClientArea(props: {
         <PharmacyHome
           medicines={medicines}
           pharmacyWhatsapp={pharmacyWhatsapp}
+          pharmacyPhone={pharmacyPhone}
           onOpenDetail={(m) => { setSelectedMedicine(m); setView("detail"); }}
           onAdd={(m) => addToCart(m.id)}
           onOpenCart={() => setView("cart")}
@@ -1282,9 +1288,10 @@ function ClientTabBar({ view, setView, cartCount, ordersDot }: { view: ClientVie
 }
 
 // ---------- Screen 1: Home ----------
-function PharmacyHome({ medicines, pharmacyWhatsapp, onOpenDetail, onAdd, onOpenCart, cartCount }: {
+function PharmacyHome({ medicines, pharmacyWhatsapp, pharmacyPhone, onOpenDetail, onAdd, onOpenCart, cartCount }: {
   medicines: Medicine[];
   pharmacyWhatsapp: string | null;
+  pharmacyPhone: string | null;
   onOpenDetail: (m: Medicine) => void;
   onAdd: (m: Medicine) => void;
   onOpenCart: () => void;
@@ -1352,6 +1359,14 @@ function PharmacyHome({ medicines, pharmacyWhatsapp, onOpenDetail, onAdd, onOpen
           <div className="flex items-center gap-1 text-[11px] text-[hsl(var(--ph-ink-soft))] mt-2">
             <Clock className="h-3 w-3" /> {PHARMACY.hours}
           </div>
+          {pharmacyPhone && (
+            <a
+              href={`tel:${pharmacyPhone.replace(/[^0-9+]/g, "")}`}
+              className="flex items-center gap-1 text-[11px] font-semibold text-[hsl(var(--ph-purple))] mt-1"
+            >
+              <Phone className="h-3 w-3" /> {pharmacyPhone}
+            </a>
+          )}
         </div>
 
       </div>
