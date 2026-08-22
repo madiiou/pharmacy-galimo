@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { useUserRoles } from "../hooks/useUserRoles";
 import { usePharmacies, type Pharmacy } from "../hooks/usePharmacies";
-import { GUINEA_CITIES } from "./Pharmacy";
+import { GUINEA_CITIES, DAY_LABELS, DEFAULT_SCHEDULE, isPharmacyOpen, type DaySchedule } from "./Pharmacy";
 import { formatGNF } from "../lib/pharmacy";
 
 function PharmacyDialog({
@@ -35,12 +35,21 @@ function PharmacyDialog({
       address: "",
       delivery_fee_gnf: 15000,
       delivery_cities: ["Conakry"],
+      opening_hours: DEFAULT_SCHEDULE,
       is_active: true,
       is_verified: false,
       description: "",
     }
   );
   const [saving, setSaving] = useState(false);
+
+  const schedule = form.opening_hours ?? DEFAULT_SCHEDULE;
+  const setDay = (i: number, patch: Partial<DaySchedule>) => {
+    setForm({
+      ...form,
+      opening_hours: schedule.map((d, idx) => (idx === i ? { ...d, ...patch } : d)),
+    });
+  };
 
   const submit = async () => {
     setSaving(true);
@@ -138,6 +147,39 @@ function PharmacyDialog({
             <p className="text-xs text-muted-foreground mt-1">
               {(form.delivery_cities ?? []).length} ville(s) sélectionnée(s)
             </p>
+          </div>
+          <div>
+            <Label>Horaires</Label>
+            <p className="text-xs text-muted-foreground mb-2">
+              Déterminent le statut Ouvert/Fermé affiché côté client. Le pharmacien peut aussi les modifier depuis son propre écran.
+            </p>
+            <div className="space-y-1.5">
+              {schedule.map((d, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="text-xs w-16 flex-shrink-0">{DAY_LABELS[i].slice(0, 3)}</span>
+                  <Switch checked={d.open} onCheckedChange={(v) => setDay(i, { open: v })} />
+                  {d.open ? (
+                    <>
+                      <Input
+                        type="time"
+                        value={d.from}
+                        onChange={(e) => setDay(i, { from: e.target.value })}
+                        className="h-8 text-xs"
+                      />
+                      <span className="text-xs text-muted-foreground">→</span>
+                      <Input
+                        type="time"
+                        value={d.to}
+                        onChange={(e) => setDay(i, { to: e.target.value })}
+                        className="h-8 text-xs"
+                      />
+                    </>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Fermé</span>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
           <div>
             <Label>Description</Label>
@@ -258,6 +300,14 @@ export default function AdminPharmacies() {
               </p>
               {p.phone && <p>📞 {p.phone}</p>}
               <p>🚚 Livraison : {formatGNF(Number(p.delivery_fee_gnf))}</p>
+              {(() => {
+                const status = isPharmacyOpen(p.opening_hours ?? DEFAULT_SCHEDULE);
+                return (
+                  <p className={status.open ? "text-emerald-600" : "text-red-600"}>
+                    {status.open ? "🟢" : "🔴"} {status.label}
+                  </p>
+                );
+              })()}
               <p className="text-xs text-muted-foreground">
                 {p.total_orders ?? 0} commandes • Owner : {p.owner_id ? p.owner_id.slice(0, 8) + "…" : "aucun"}
               </p>

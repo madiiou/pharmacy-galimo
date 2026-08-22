@@ -3583,9 +3583,9 @@ function RevenueCard({ label, value, count, tone }: { label: string; value: numb
 // PHARMACIST HOURS
 // ============================================================
 
-type DaySchedule = { open: boolean; from: string; to: string };
-const DAY_LABELS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
-const DEFAULT_SCHEDULE: DaySchedule[] = [
+export type DaySchedule = { open: boolean; from: string; to: string };
+export const DAY_LABELS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
+export const DEFAULT_SCHEDULE: DaySchedule[] = [
   { open: true, from: "08:00", to: "20:00" },
   { open: true, from: "08:00", to: "20:00" },
   { open: true, from: "08:00", to: "20:00" },

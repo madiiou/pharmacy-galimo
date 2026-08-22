@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
+import type { DaySchedule } from "../pages/Pharmacy";
 
 export interface Pharmacy {
   id: string;
@@ -16,7 +17,7 @@ export interface Pharmacy {
   delivery_fee_gnf: number;
   delivery_zones: string[] | null;
   delivery_cities: string[];
-  opening_hours: string | null;
+  opening_hours: DaySchedule[] | null;
   is_active: boolean;
   is_verified: boolean;
   rating: number | null;
@@ -38,6 +39,7 @@ function toApiBody(payload: Partial<Pharmacy>) {
     email: payload.email ?? undefined,
     deliveryFeeGnf: payload.delivery_fee_gnf,
     deliveryCities: payload.delivery_cities,
+    openingHours: payload.opening_hours ?? undefined,
     description: payload.description ?? undefined,
     isActive: payload.is_active,
     isVerified: payload.is_verified,
