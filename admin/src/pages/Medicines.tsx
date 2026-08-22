@@ -24,7 +24,13 @@ const CATEGORIES = [
   { id: "antibio", label: "Antibiotiques" },
   { id: "vitamines", label: "Vitamines" },
   { id: "cardio", label: "Cardio" },
+  { id: "digestif", label: "Digestif" },
+  { id: "dermato", label: "Peau" },
+  { id: "orl_yeux", label: "ORL & Yeux" },
+  { id: "gyneco", label: "Gynéco" },
+  { id: "nerveux", label: "Sommeil & Nerfs" },
   { id: "soins", label: "Soins" },
+  { id: "materiel", label: "Matériel" },
   { id: "bebe", label: "Bébé" },
 ];
 

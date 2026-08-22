@@ -93,7 +93,9 @@ import imgVermifugeEnfant from "../assets/meds/vermifuge-enfant.jpg";
 // TYPES & MOCK DATA
 // ============================================================
 
-type Category = "all" | "fievre" | "antibio" | "vitamines" | "cardio" | "soins" | "bebe";
+type Category =
+  | "all" | "fievre" | "antibio" | "vitamines" | "cardio" | "soins" | "bebe"
+  | "digestif" | "dermato" | "orl_yeux" | "gyneco" | "nerveux" | "materiel";
 type StockLevel = "high" | "medium" | "low" | "out";
 
 interface Medicine {
@@ -132,6 +134,12 @@ const PRICE_RANGES: Record<Exclude<Category, "all">, [number, number]> = {
   cardio:    [30000, 120000],
   soins:     [ 4000,  35000],
   bebe:      [ 8000,  40000],
+  digestif:  [ 5000,  30000],
+  dermato:   [ 5000,  25000],
+  orl_yeux:  [ 8000,  35000],
+  gyneco:    [10000,  40000],
+  nerveux:   [10000,  50000],
+  materiel:  [ 2000,  20000],
 };
 function defaultPriceFor(m: { id: string; category: Exclude<Category, "all"> }): number {
   const [lo, hi] = PRICE_RANGES[m.category] ?? [10000, 30000];
@@ -206,6 +214,24 @@ function deriveIndications(m: Medicine): string[] {
       break;
     case "bebe":
       base.push("bébé", "nourrisson", "fièvre", "diarrhée", "vaccination");
+      break;
+    case "digestif":
+      base.push("maux de ventre", "mal de ventre", "colique", "diarrhée", "constipation", "reflux", "brûlure d'estomac", "nausée", "vomissement", "ballonnement");
+      break;
+    case "dermato":
+      base.push("peau", "mycose", "démangeaison", "eczéma", "acné", "champignon", "brûlure", "irritation");
+      break;
+    case "orl_yeux":
+      base.push("yeux", "œil", "oreille", "nez", "rhume", "sinusite", "conjonctivite", "otite", "mal de gorge", "gorge", "allergie");
+      break;
+    case "gyneco":
+      base.push("contraception", "règles", "grossesse", "gynéco", "infection vaginale", "mycose vaginale");
+      break;
+    case "nerveux":
+      base.push("anxiété", "stress", "insomnie", "sommeil", "migraine", "nerfs", "dépression");
+      break;
+    case "materiel":
+      base.push("matériel", "pansement", "hygiène");
       break;
   }
   const desc = m.description.toLowerCase();
@@ -798,7 +824,13 @@ const CATEGORIES: { id: Category; label: string; emoji: string }[] = [
   { id: "antibio", label: "Antibiotiques", emoji: "💉" },
   { id: "vitamines", label: "Vitamines", emoji: "🍊" },
   { id: "cardio", label: "Cardio", emoji: "❤️" },
-  { id: "soins", label: "Soins", emoji: "🧴" },
+  { id: "digestif", label: "Digestif", emoji: "🤢" },
+  { id: "dermato", label: "Peau", emoji: "🧴" },
+  { id: "orl_yeux", label: "ORL & Yeux", emoji: "👁️" },
+  { id: "gyneco", label: "Gynéco", emoji: "🌸" },
+  { id: "nerveux", label: "Sommeil & Nerfs", emoji: "🧠" },
+  { id: "soins", label: "Soins", emoji: "🩹" },
+  { id: "materiel", label: "Matériel", emoji: "🩺" },
   { id: "bebe", label: "Bébé", emoji: "🍼" },
 ];
 
