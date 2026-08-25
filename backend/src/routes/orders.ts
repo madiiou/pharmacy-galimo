@@ -4,7 +4,8 @@ import { pool } from "../db.js";
 import { requireAuth, requireRole } from "../auth.js";
 import { canManagePharmacy } from "./pharmacies.js";
 import { notifyOrderChange } from "../chat.js";
-import { requestDebit } from "../galimoPartner.js";
+import { requestDebit, refundDebit } from "../galimoPartner.js";
+import { applyServiceFee } from "../pricing.js";
 
 export const ordersRouter = Router();
 
@@ -204,7 +205,8 @@ ordersRouter.post("/manual", requireAuth, requireRole("admin", "pharmacy_partner
 
     // Le transport n'entre pas dans ce total : son prix est négocié et réglé
     // directement avec le livreur après confirmation, hors paiement en ligne.
-    const totalAmount = items.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
+    const pricedItems = items.map((i) => ({ ...i, unitPrice: applyServiceFee(i.unitPrice) }));
+    const totalAmount = pricedItems.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
 
     const orderResult = await client.query(
       `INSERT INTO orders (user_id, pharmacy_id, status, total_amount, notes, origin)
@@ -213,7 +215,7 @@ ordersRouter.post("/manual", requireAuth, requireRole("admin", "pharmacy_partner
     );
     const order = orderResult.rows[0];
 
-    for (const item of items) {
+    for (const item of pricedItems) {
       await client.query(
         `INSERT INTO order_items (order_id, medicine_id, item_name, quantity, unit_price, subtotal)
          VALUES ($1,$2,$3,$4,$5,$6)`,
@@ -330,22 +332,30 @@ ordersRouter.post("/:id/pay", requireAuth, async (req, res) => {
 
   if (order.user_id !== req.user!.sub) return res.status(403).json({ error: "Forbidden" });
 
+  // Référence stable par commande (pas de composant aléatoire) : si le débit
+  // échoue et que le client réessaie, on renvoie exactement la même référence
+  // à Galimo au lieu d'en générer une nouvelle à chaque tentative.
+  const reference = order.payment_reference || `PHARM-${order.id.slice(0, 8)}`;
+
   // Verrou atomique : cette commande ne passe en "processing" que si elle
   // n'y est pas déjà et n'est pas déjà payée. Un SELECT puis UPDATE séparés
   // laisserait une fenêtre de course où deux requêtes concurrentes (double-tap,
   // retry réseau) liraient toutes les deux l'état "payable" avant qu'aucune
   // n'écrive, et déclencheraient chacune un débit Galimo pour la même commande.
+  // payment_reference est sauvegardée ici, avant l'appel à Galimo : si le
+  // débit réussit chez Galimo mais qu'on perd la connexion DB juste après,
+  // le webhook de confirmation retrouve quand même la commande par référence
+  // au lieu de tomber sur "no order found".
   const claim = await pool.query(
-    `UPDATE orders SET payment_status = 'processing', updated_at = now()
+    `UPDATE orders SET payment_status = 'processing', payment_reference = $2, updated_at = now()
      WHERE id = $1 AND status = 'pending'
        AND (payment_status IS NULL OR payment_status NOT IN ('paid', 'processing'))
      RETURNING *`,
-    [order.id]
+    [order.id, reference]
   );
   if (!claim.rowCount) {
     return res.status(409).json({ error: "Order is not payable or payment already in progress" });
   }
-  const claimed = claim.rows[0];
 
   const userResult = await pool.query("SELECT phone FROM users WHERE id = $1", [order.user_id]);
   const phone = userResult.rows[0]?.phone;
@@ -354,17 +364,12 @@ ordersRouter.post("/:id/pay", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "No phone number on file for this account" });
   }
 
-  // Référence stable par commande (pas de composant aléatoire) : si le débit
-  // échoue et que le client réessaie, on renvoie exactement la même référence
-  // à Galimo au lieu d'en générer une nouvelle à chaque tentative.
-  const reference = claimed.payment_reference || `PHARM-${order.id.slice(0, 8)}`;
-
-  // Commission Galimo (10%) sur le prix des médicaments uniquement, ajoutée
-  // par-dessus ce que paie le client. Le transport n'est jamais inclus dans
+  // Les 10% de frais de service Galimo sont déjà inclus dans unit_price
+  // (majorés à la source sur le prix pharmacien, voir pricing.ts) : pas de
+  // majoration supplémentaire ici. Le transport n'est jamais inclus dans
   // le paiement en ligne : son prix est négocié et réglé directement avec
   // le livreur après confirmation de la commande.
-  const medicinesSubtotal = order.total_amount - order.delivery_fee;
-  const debitAmount = Math.round(medicinesSubtotal * 1.10);
+  const debitAmount = order.total_amount - order.delivery_fee;
 
   try {
     const debit = await requestDebit({
@@ -375,9 +380,9 @@ ordersRouter.post("/:id/pay", requireAuth, async (req, res) => {
     });
 
     const result = await pool.query(
-      `UPDATE orders SET payment_reference = $1, payment_idrequest = $2, updated_at = now()
-       WHERE id = $3 RETURNING *`,
-      [reference, debit.idrequest, order.id]
+      `UPDATE orders SET payment_idrequest = $1, updated_at = now()
+       WHERE id = $2 RETURNING *`,
+      [debit.idrequest, order.id]
     );
     notifyOrderChange(result.rows[0]);
     res.json(result.rows[0]);
@@ -448,7 +453,7 @@ ordersRouter.patch("/:id/price", requireAuth, requireRole("admin", "pharmacy_par
         await client.query(
           `UPDATE order_items SET is_available = true, unit_price = $1, subtotal = $1 * quantity
            WHERE id = $2 AND order_id = $3`,
-          [item.unitPrice ?? 0, item.id, order.id]
+          [applyServiceFee(item.unitPrice ?? 0), item.id, order.id]
         );
       } else {
         await client.query(
@@ -503,6 +508,27 @@ ordersRouter.patch("/:id/status", requireAuth, requireRole("admin", "pharmacy_pa
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { status, paymentStatus } = parsed.data;
 
+  // On ne rembourse que si un débit a réellement abouti (payment_status
+  // 'paid', posé uniquement par le webhook sur debit.completed) : un débit
+  // encore 'processing' n'est pas SUCCESS chez Galimo et un CANCEL_REFUND
+  // dessus échouerait de toute façon. On force le paymentStatus final à
+  // 'refunded' pour ne pas dépendre de ce que l'appelant a pu envoyer par
+  // ailleurs, et pour rendre ce chemin idempotent : rejouer le même PATCH
+  // ne re-déclenche pas de remboursement puisque payment_status ne vaut
+  // alors plus 'paid'.
+  let finalPaymentStatus: string | null = paymentStatus ?? null;
+  if (status === "cancelled" && order.payment_status === "paid") {
+    if (!order.payment_reference) {
+      return res.status(500).json({ error: "Paid order has no payment_reference — cannot refund" });
+    }
+    try {
+      await refundDebit(order.payment_reference);
+    } catch (err: any) {
+      return res.status(502).json({ error: err.message ?? "Refund request failed" });
+    }
+    finalPaymentStatus = "refunded";
+  }
+
   const result = await pool.query(
     `UPDATE orders SET
        status = COALESCE($1, status),
@@ -510,7 +536,7 @@ ordersRouter.patch("/:id/status", requireAuth, requireRole("admin", "pharmacy_pa
        updated_at = now()
      WHERE id = $3
      RETURNING *`,
-    [status ?? null, paymentStatus ?? null, order.id]
+    [status ?? null, finalPaymentStatus, order.id]
   );
   notifyOrderChange(result.rows[0]);
   res.json(result.rows[0]);

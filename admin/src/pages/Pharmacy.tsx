@@ -109,7 +109,7 @@ interface Medicine {
   prescription: boolean;
   onOrder: boolean;
   stock: StockLevel;
-  price?: number; // GNF — visible uniquement côté pharmacien
+  price?: number; // GNF, prix pharmacien net ; le backend majore de 10% avant de le facturer au client
   indications?: string[]; // maux / maladies pour lesquels le produit est indiqué
   posologie?: string;
   contreIndication?: string;
@@ -170,7 +170,10 @@ function apiMedicineToDemo(m: any): Medicine {
     prescription: !!m.requires_prescription,
     onOrder: false,
     stock: (m.in_stock ? "high" : "out") as StockLevel,
-    price: typeof m.price === "number" ? m.price : Number(m.price),
+    // Le backend stocke le prix client (+10%) ; on redescend au prix pharmacien
+    // net ici pour que le formulaire d'édition n'applique pas la majoration
+    // une deuxième fois à chaque sauvegarde.
+    price: Math.round((typeof m.price === "number" ? m.price : Number(m.price)) / 1.1),
     posologie: m.posologie ?? undefined,
     contreIndication: m.contre_indication ?? undefined,
   };
@@ -1921,9 +1924,10 @@ function PharmacistResponse({ order, getMed, onAccept, onCancel, onBack }: {
   const available = order.items.filter((i) => i.isAvailable);
   const unavailable = order.items.filter((i) => i.isAvailable === false);
   const allUnavailable = available.length === 0;
+  // confirmedPrice inclut déjà les 10% de frais de service Galimo (majorés
+  // par le backend sur le prix pharmacien) : pas de ligne à ajouter ici.
   const subtotal = available.reduce((s, i) => s + (i.confirmedPrice || 0) * i.quantity, 0);
-  const serviceFee = galimoCommission(subtotal);
-  const total = subtotal + serviceFee + (order.deliveryFee || 0);
+  const total = subtotal + (order.deliveryFee || 0);
 
   return (
     <div className="px-4 pt-4 pb-32">
@@ -1993,10 +1997,6 @@ function PharmacistResponse({ order, getMed, onAccept, onCancel, onBack }: {
             <div className="flex justify-between text-sm">
               <span className="text-[hsl(var(--ph-ink-soft))]">Sous-total</span>
               <span className="font-semibold">{formatGNF(subtotal)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-[hsl(var(--ph-ink-soft))]">Frais de service</span>
-              <span className="font-semibold">{formatGNF(serviceFee)}</span>
             </div>
             {order.deliveryMode === "livraison" && (
               <div className="flex justify-between text-sm">
@@ -3210,7 +3210,7 @@ function MedicineFormModal({ initial, onClose, onSave, onDelete }: {
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-[hsl(var(--ph-ink-soft))]">GNF</span>
             </div>
             <p className="text-[10px] text-[hsl(var(--ph-ink-soft))] mt-1">
-              Pré-remplira automatiquement le prix des commandes. Jamais visible côté client.
+              C'est le prix que tu touches. Le client paiera ce montant +10% (frais de service Galimo inclus dans le prix affiché, jamais en ligne séparée).
             </p>
           </div>
 
@@ -3365,17 +3365,14 @@ function printOrderTicket(order: Order, getMed: (id: string) => Medicine) {
     y += nameLines.length * 3.5 + 1;
   });
   hr();
+  // subtotal inclut déjà les 10% de frais de service Galimo (majorés par le
+  // backend sur le prix pharmacien) : pas de ligne de frais à ajouter ici.
   const totalWithFee = subtotal + (order.deliveryFee || 0);
   row("Sous-total", `${fmt(subtotal)} GNF`, { size: 9 });
   if (order.deliveryFee && order.deliveryFee > 0) {
     row("Transport", `${fmt(order.deliveryFee)} GNF`, { size: 9 });
   }
-  row("TOTAL", `${fmt(totalWithFee)} GNF`, { bold: true, size: 11 });
-  hr();
-  const serviceFee = galimoCommission(subtotal);
-  const clientTotal = totalWithFee + serviceFee;
-  row("Frais de service", `+${fmt(serviceFee)} GNF`, { size: 8 });
-  row("TOTAL PAYE PAR LE CLIENT", `${fmt(clientTotal)} GNF`, { bold: true, size: 9 });
+  row("TOTAL PAYE PAR LE CLIENT", `${fmt(totalWithFee)} GNF`, { bold: true, size: 11 });
   hr();
   y += 2;
   line("Merci de votre confiance", { size: 8, align: "center" });
@@ -3424,6 +3421,9 @@ function PharmacistStats({ orders, medicines, getMed }: {
     const orderSubtotal = (o: Order) =>
       o.items.reduce((s, i) => s + (i.isAvailable === false ? 0 : (i.confirmedPrice || 0) * i.quantity), 0);
     const orderTotal = (o: Order) => orderSubtotal(o) + (o.deliveryFee || 0);
+    // orderSubtotal est le prix payé par le client, frais de service Galimo (10%)
+    // déjà inclus. Ce que touche la pharmacie, c'est ce sous-total sans ces 10%.
+    const orderNet = (o: Order) => Math.round(orderSubtotal(o) / 1.1) + (o.deliveryFee || 0);
 
     const paid = orders.filter(isOrderPaid);
     const caDay = paid.filter((o) => o.createdAt >= startOfDay.getTime()).reduce((s, o) => s + orderTotal(o), 0);
@@ -3461,13 +3461,15 @@ function PharmacistStats({ orders, medicines, getMed }: {
       month: paid.filter((o) => o.createdAt >= startOfMonth.getTime()).length,
     };
 
+    const netDay = paid.filter((o) => o.createdAt >= startOfDay.getTime()).reduce((s, o) => s + orderNet(o), 0);
+    const netWeek = paid.filter((o) => o.createdAt >= startOfWeek.getTime()).reduce((s, o) => s + orderNet(o), 0);
+    const netMonth = paid.filter((o) => o.createdAt >= startOfMonth.getTime()).reduce((s, o) => s + orderNet(o), 0);
+
     return {
-      // La pharmacie reçoit son montant plein : les frais de service Galimo
-      // sont payés en plus par le client, pas déduits d'ici.
+      // caX = montant payé par le client (frais de service Galimo inclus).
+      // netX = ce que touche réellement la pharmacie, une fois ces 10% retirés.
       caDay, caWeek, caMonth,
-      netDay: caDay,
-      netWeek: caWeek,
-      netMonth: caMonth,
+      netDay, netWeek, netMonth,
       topProducts, topRuptures, ordersCount, now,
     };
   }, [orders, medicines, getMed]);

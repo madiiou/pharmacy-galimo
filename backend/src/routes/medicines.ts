@@ -3,6 +3,7 @@ import { z } from "zod";
 import { pool } from "../db.js";
 import { requireAuth, requireRole } from "../auth.js";
 import { canManagePharmacy } from "./pharmacies.js";
+import { applyServiceFee } from "../pricing.js";
 
 export const medicinesRouter = Router();
 
@@ -72,7 +73,7 @@ medicinesRouter.post("/", requireAuth, requireRole("admin", "pharmacy_partner"),
                              posologie, contre_indication, in_stock, requires_prescription)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
      RETURNING *`,
-    [m.pharmacyId, req.user!.sub, m.name, m.price, m.originalPrice ?? null, m.category ?? null,
+    [m.pharmacyId, req.user!.sub, m.name, applyServiceFee(m.price), m.originalPrice ?? null, m.category ?? null,
      m.form ?? null, m.laboratory ?? null, m.imageUrl ?? null, m.description ?? null,
      m.indication ?? null, m.activeSubstance ?? null, m.posologie ?? null, m.contreIndication ?? null,
      m.inStock, m.requiresPrescription]
@@ -112,7 +113,7 @@ medicinesRouter.patch("/:id", requireAuth, requireRole("admin", "pharmacy_partne
        updated_at = now()
      WHERE id = $16
      RETURNING *`,
-    [m.name ?? null, m.price ?? null, m.originalPrice ?? null, m.category ?? null, m.form ?? null,
+    [m.name ?? null, m.price != null ? applyServiceFee(m.price) : null, m.originalPrice ?? null, m.category ?? null, m.form ?? null,
      m.laboratory ?? null, m.imageUrl ?? null, m.description ?? null, m.indication ?? null,
      m.activeSubstance ?? null, m.posologie ?? null, m.contreIndication ?? null,
      m.inStock ?? null, m.requiresPrescription ?? null, m.isActive ?? null,

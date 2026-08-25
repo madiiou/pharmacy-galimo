@@ -2,6 +2,7 @@ import { Router } from "express";
 import jwt from "jsonwebtoken";
 import { pool } from "../db.js";
 import { notifyOrderChange } from "../chat.js";
+import { refundDebit } from "../galimoPartner.js";
 
 export const galimoPaymentWebhookRouter = Router();
 
@@ -43,6 +44,33 @@ galimoPaymentWebhookRouter.post("/", async (req, res) => {
       return res.status(200).end();
     }
     const order = orderResult.rows[0];
+
+    // La commande a pu être annulée pendant que ce débit était encore en
+    // vol (payment_status 'processing' au moment de l'annulation, donc pas
+    // de remboursement déclenché alors — voir PATCH /:id/status). Si le
+    // débit finit par réussir malgré tout, l'argent vient d'être capté pour
+    // une commande qu'on n'honorera pas : on rembourse immédiatement au lieu
+    // de laisser payment_status passer à 'paid' sans que rien ne le détecte.
+    if (payload.event === "debit.completed" && order.status === "cancelled") {
+      try {
+        await refundDebit(payload.reference);
+        const result = await pool.query(
+          "UPDATE orders SET payment_status = 'refunded', updated_at = now() WHERE id = $1 RETURNING *",
+          [order.id]
+        );
+        notifyOrderChange(result.rows[0]);
+      } catch (err: any) {
+        console.error(`[galimo-payment-webhook] auto-refund failed for cancelled order ${order.id}`, err);
+        // On marque quand même 'paid' pour que ça reste visible et
+        // traitable à la main côté admin plutôt que de disparaître.
+        const result = await pool.query(
+          "UPDATE orders SET payment_status = 'paid', updated_at = now() WHERE id = $1 RETURNING *",
+          [order.id]
+        );
+        notifyOrderChange(result.rows[0]);
+      }
+      return res.status(200).end();
+    }
 
     const newPaymentStatus = payload.event === "debit.completed" ? "paid" : "unpaid";
     const result = await pool.query(

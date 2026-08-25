@@ -109,7 +109,11 @@ function useAdminData() {
       if (o.payment_status === "paid") {
         stats.paidOrders += 1;
         stats.gmv += o.total_amount;
-        stats.commission += Math.round((o.total_amount - (o.delivery_fee || 0)) * 0.1);
+        // Le sous-total inclut déjà les 10% de frais de service Galimo
+        // (majorés sur le prix pharmacien) : la commission est ce delta,
+        // pas 10% de plus par-dessus.
+        const medicinesSubtotal = o.total_amount - (o.delivery_fee || 0);
+        stats.commission += medicinesSubtotal - Math.round(medicinesSubtotal / 1.1);
       }
       map.set(o.pharmacy_id, stats);
     }

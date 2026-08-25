@@ -1,5 +1,8 @@
+import jwt from "jsonwebtoken";
+
 const BASE_URL = process.env.GALIMO_PARTNER_BASE_URL as string;
 const API_KEY = process.env.GALIMO_PARTNER_API_KEY as string;
+const API_SECRET = process.env.GALIMO_PARTNER_API_SECRET as string;
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
@@ -37,6 +40,14 @@ export function toGalimoPhone(phone: string): string {
   return digits.slice(-9);
 }
 
+// Débit et remboursement sont signés : le corps de la requête est un JWT
+// HS256 (clé secrète partenaire), pas du JSON en clair — contrairement aux
+// routes de lecture (statut, solde, historique) qui ne portent que les
+// en-têtes d'auth.
+function signBody(payload: object): string {
+  return jwt.sign(payload, API_SECRET, { algorithm: "HS256" });
+}
+
 export async function requestDebit(params: {
   phone: string;
   amount: number;
@@ -47,15 +58,32 @@ export async function requestDebit(params: {
     method: "POST",
     headers: await partnerHeaders(),
     body: JSON.stringify({
-      numero_telephone: toGalimoPhone(params.phone),
-      montant: params.amount,
-      reference: params.reference,
-      description: params.description,
+      jwt: signBody({
+        numero_telephone: toGalimoPhone(params.phone),
+        montant: params.amount,
+        reference: params.reference,
+        description: params.description,
+      }),
     }),
   });
   const data = await resp.json();
   if (!resp.ok || data.error) {
     throw new Error(data.error_code || data.error || `debit failed: ${resp.status}`);
+  }
+  return { idrequest: data.idrequest, status: data.status };
+}
+
+// Annule un débit SUCCESS (remboursement intégral du client, sans
+// confirmation de sa part). Idempotent si rejoué sur la même référence.
+export async function refundDebit(reference: string): Promise<{ idrequest: string; status: string }> {
+  const resp = await fetch(`${BASE_URL}/partner/transaction/credit`, {
+    method: "POST",
+    headers: await partnerHeaders(),
+    body: JSON.stringify({ jwt: signBody({ reference }) }),
+  });
+  const data = await resp.json();
+  if (!resp.ok || data.error) {
+    throw new Error(data.error_code || data.error || `refund failed: ${resp.status}`);
   }
   return { idrequest: data.idrequest, status: data.status };
 }
