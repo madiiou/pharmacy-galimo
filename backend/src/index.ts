@@ -28,6 +28,11 @@ const app = express();
 app.use(cors());
 app.use(
   express.json({
+    // Les photos de médicaments (scan + suppression du fond) partent en
+    // base64 dans le body JSON : la limite par défaut d'Express (100kb) est
+    // largement dépassée par une image, ce qui faisait échouer silencieusement
+    // toute sauvegarde de fiche avec photo.
+    limit: "15mb",
     verify: (req, _res, buf) => {
       (req as any).rawBody = buf;
     },
@@ -52,7 +57,11 @@ app.use("/api/events", eventsRouter);
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error("[express error handler]", err);
-  res.status(500).json({ error: "Internal error" });
+  // Préserve le vrai code (ex: 413 body trop volumineux) au lieu de tout
+  // aplatir en 500 générique, ce qui rendait ce genre d'échec illisible.
+  const status = err.status ?? err.statusCode ?? 500;
+  const message = status === 500 ? "Internal error" : err.message ?? "Request error";
+  res.status(status).json({ error: message });
 });
 
 const httpServer = createServer(app);
