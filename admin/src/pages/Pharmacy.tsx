@@ -3059,7 +3059,10 @@ function MedicineFormModal({ initial, onClose, onSave, onDelete }: {
     }
   };
 
-  const canSave = name.trim().length > 0 && dosage.trim().length > 0;
+  // Le dosage/format est optionnel côté API (medicines.ts) : l'exiger ici
+  // bloquait la sauvegarde de fiches importées en vrac sans ce champ rempli,
+  // même pour juste corriger un prix.
+  const canSave = name.trim().length > 0;
 
   const handleSave = () => {
     if (!canSave) return;
