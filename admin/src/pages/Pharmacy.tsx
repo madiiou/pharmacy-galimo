@@ -1000,10 +1000,10 @@ export default function Pharmacy() {
         for (const o of next) {
           const before = payStatusRef.current.get(o.id);
           if (before === "processing" && o.paymentStatus === "paid") {
-            sonner.success("Paiement confirmé ✓", { description: `Commande #${o.ref}`, duration: 5000 });
+            sonner.success("Paiement accepté ✓", { description: `Commande #${o.ref}`, duration: 5000 });
           } else if (before === "processing" && o.paymentStatus === "unpaid") {
             sonner.error("Paiement refusé", {
-              description: `Commande #${o.ref} : le débit n'a pas été validé. Vous pouvez réessayer.`,
+              description: `Commande #${o.ref} : le paiement n'a pas abouti. Vous pouvez réessayer.`,
               duration: 7000,
             });
           }
@@ -1149,8 +1149,8 @@ export default function Pharmacy() {
             try {
               await api(`/orders/${o.id}/pay`, { method: "POST" });
               await refreshOrders();
-              sonner.info("Demande de paiement renvoyée", {
-                description: "En attente de votre confirmation dans l'application Galimo.",
+              sonner.info("Paiement en cours…", {
+                description: "Traitement de votre paiement.",
                 duration: 5000,
               });
             } catch (err) {
@@ -1162,8 +1162,8 @@ export default function Pharmacy() {
               await api(`/orders/${id}/confirm`, { method: "PATCH" });
               await api(`/orders/${id}/pay`, { method: "POST" });
               await refreshOrders();
-              sonner.info("Demande de paiement envoyée", {
-                description: "En attente de votre confirmation dans l'application Galimo.",
+              sonner.info("Paiement en cours…", {
+                description: "Traitement de votre paiement.",
                 duration: 6000,
               });
               setClientView("history");
@@ -2112,7 +2112,7 @@ function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onBack }:
               </div>
              </button>
              {o.status === "accepted" && o.paymentStatus === "processing" && (
-               <p className="mt-2 text-xs text-amber-700 font-medium">⏳ En attente de votre confirmation sur l'app Galimo…</p>
+               <p className="mt-2 text-xs text-amber-700 font-medium">⏳ Paiement en cours de traitement…</p>
              )}
              {o.status === "accepted" && (o.paymentStatus === "unpaid" || !o.paymentStatus) && (
                <button
@@ -2151,7 +2151,7 @@ function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onBack }:
 function StatusBadge({ status, paymentStatus }: { status: OrderStatus; paymentStatus?: string }) {
   if ((status === "accepted" || status === "ready") && paymentStatus !== "paid") {
     if (paymentStatus === "processing") {
-      return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">⏳ En attente de paiement</span>;
+      return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">⏳ Paiement en cours</span>;
     }
     return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">Paiement refusé</span>;
   }
