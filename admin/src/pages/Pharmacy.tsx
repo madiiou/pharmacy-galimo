@@ -2105,7 +2105,17 @@ function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onBack }:
               </div>
              </button>
              {o.status === "accepted" && o.paymentStatus === "processing" && (
-               <p className="mt-2 text-xs text-amber-700 font-medium">⏳ Paiement en cours de traitement…</p>
+               <>
+                 <p className="mt-2 text-xs text-amber-700 font-medium">⏳ Paiement en cours de traitement…</p>
+                 <button
+                   onClick={(e) => { e.stopPropagation(); handleRetryPay(o); }}
+                   disabled={retryingId === o.id}
+                   className="mt-2 w-full h-10 rounded-xl bg-amber-50 text-amber-800 font-semibold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition disabled:opacity-60"
+                 >
+                   {retryingId === o.id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                   {retryingId === o.id ? "Vérification…" : "Vérifier / relancer le paiement"}
+                 </button>
+               </>
              )}
              {o.status === "accepted" && (o.paymentStatus === "unpaid" || !o.paymentStatus) && (
                <button

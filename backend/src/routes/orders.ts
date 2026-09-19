@@ -4,7 +4,7 @@ import { pool } from "../db.js";
 import { requireAuth, requireRole } from "../auth.js";
 import { canManagePharmacy } from "./pharmacies.js";
 import { notifyOrderChange } from "../chat.js";
-import { requestDebit, refundDebit } from "../galimoPartner.js";
+import { requestDebit, refundDebit, getTransactionStatus } from "../galimoPartner.js";
 import { applyServiceFee } from "../pricing.js";
 
 export const ordersRouter = Router();
@@ -342,10 +342,38 @@ ordersRouter.post("/:id/pay", requireAuth, async (req, res) => {
 
   if (order.user_id !== req.user!.sub) return res.status(403).json({ error: "Forbidden" });
 
-  // Référence stable par commande (pas de composant aléatoire) : si le débit
-  // échoue et que le client réessaie, on renvoie exactement la même référence
-  // à Galimo au lieu d'en générer une nouvelle à chaque tentative.
-  const reference = order.payment_reference || `PHARM-${order.id.slice(0, 8)}`;
+  // Commande restée "processing" (webhook perdu, ou débit déjà terminé chez
+  // Galimo) : on interroge Galimo au lieu de bloquer le client indéfiniment.
+  // Débit réussi -> on enregistre le paiement ; échec/refus/expiré -> on libère
+  // la commande pour un vrai nouvel essai ; toujours en attente -> on attend.
+  if (order.payment_status === "processing" && order.payment_reference) {
+    try {
+      const st = await getTransactionStatus(order.payment_reference);
+      if (st.statut === "SUCCESS" && order.status === "pending") {
+        const paid = await pool.query(
+          "UPDATE orders SET payment_status = 'paid', updated_at = now() WHERE id = $1 RETURNING *",
+          [order.id]
+        );
+        notifyOrderChange(paid.rows[0]);
+        return res.json(paid.rows[0]);
+      }
+      if (["FAILED", "REFUSED", "EXPIRED"].includes(st.statut)) {
+        await pool.query(
+          "UPDATE orders SET payment_status = 'unpaid', updated_at = now() WHERE id = $1 AND payment_status = 'processing'",
+          [order.id]
+        );
+      }
+    } catch {
+      // Statut injoignable : on laisse le verrou tel quel, voir 409 plus bas.
+    }
+  }
+
+  // Nouvelle référence à chaque tentative : Galimo déduplique par référence,
+  // donc rejouer l'ancienne renvoyait le débit déjà échoué sans jamais
+  // relancer de vraie demande (la commande restait "en cours" sans fin).
+  // Le double-tap reste protégé par le verrou atomique ci-dessous : une seule
+  // requête peut passer la commande en "processing" et générer la référence.
+  const reference = `PHARM-${order.id.slice(0, 8)}-${Date.now().toString(36)}`;
 
   // Verrou atomique : cette commande ne passe en "processing" que si elle
   // n'y est pas déjà et n'est pas déjà payée. Un SELECT puis UPDATE séparés
@@ -364,7 +392,7 @@ ordersRouter.post("/:id/pay", requireAuth, async (req, res) => {
     [order.id, reference]
   );
   if (!claim.rowCount) {
-    return res.status(409).json({ error: "Order is not payable or payment already in progress" });
+    return res.status(409).json({ error: "Le paiement est déjà en cours de traitement ou la commande n'est plus payable." });
   }
 
   const userResult = await pool.query("SELECT phone FROM users WHERE id = $1", [order.user_id]);
@@ -388,6 +416,15 @@ ordersRouter.post("/:id/pay", requireAuth, async (req, res) => {
       reference,
       description: `Pharmacie - commande #${order.id.slice(0, 8)}`,
     });
+
+    if (["FAILED", "REFUSED", "EXPIRED"].includes(String(debit.status).toUpperCase())) {
+      const failed = await pool.query(
+        "UPDATE orders SET payment_status = 'unpaid', payment_idrequest = $1, updated_at = now() WHERE id = $2 RETURNING *",
+        [debit.idrequest, order.id]
+      );
+      notifyOrderChange(failed.rows[0]);
+      return res.status(402).json({ error: "Paiement refusé : le débit n'a pas abouti. Vous pouvez réessayer." });
+    }
 
     const result = await pool.query(
       `UPDATE orders SET payment_idrequest = $1, updated_at = now()
