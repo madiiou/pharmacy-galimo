@@ -2523,6 +2523,18 @@ function PharmOrderCard({ order, getMed, onOpen, onMarkDelivered, onRefund }: { 
         {order.deliveryMode === "livraison" ? "🛵 Livraison" : "🏪 Retrait"}
       </div>
      </button>
+     {order.status === "delivered" && isOrderPaid(order) && (
+       <button
+         onClick={(e) => {
+           e.stopPropagation();
+           const total = order.items.filter((i) => i.isAvailable).reduce((sum, i) => sum + (i.confirmedPrice || 0) * i.quantity, 0);
+           if (window.confirm(`Rembourser la commande #${order.ref} (${formatGNF(total)}) au client ?`)) onRefund();
+         }}
+         className="mt-3 w-full h-10 rounded-full bg-white border border-red-300 text-red-600 text-xs font-bold active:scale-[0.98] transition"
+       >
+         Rembourser le client
+       </button>
+     )}
      {isPaid && (
        <div className="mt-3 pt-3 border-t border-[hsl(var(--ph-border))]">
          <div className="flex items-center gap-2 mb-2 bg-emerald-50 rounded-lg px-2.5 py-2">
@@ -2596,6 +2608,17 @@ function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onCancel }: {
   const allUnavailable = availableItems.length === 0;
   const canSubmit = allUnavailable || availableItems.every((i) => Number(i.confirmedPrice) > 0);
 
+  // Le bouton du bas dépend de l'avancement : réponse à envoyer, commande à
+  // annuler tant que le client n'a pas payé, ou remboursement une fois payée.
+  const bottomAction: { kind: "submit" } | { kind: "cancel" | "refund"; label: string } | null =
+    order.status === "pending_pharmacist"
+      ? { kind: "submit" }
+      : isOrderPaid(order) && order.status !== "cancelled"
+        ? { kind: "refund", label: order.status === "delivered" ? "Rembourser" : "Annuler et rembourser" }
+        : order.status === "awaiting_client"
+          ? { kind: "cancel", label: "Annuler la commande" }
+          : null;
+
   const handleSubmit = () => {
     onSubmit({
       ...order,
@@ -2632,23 +2655,6 @@ function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onCancel }: {
         <div className="ph-card p-4 mb-4 border border-emerald-200 bg-emerald-50">
           <p className="text-sm font-semibold text-emerald-700">↩ Commande annulée et remboursée</p>
           <p className="text-xs text-emerald-700 mt-1">Le montant a été recrédité sur le compte Galimo du client.</p>
-        </div>
-      )}
-
-      {(order.status === "accepted" || order.status === "ready") && isOrderPaid(order) && (
-        <div className="ph-card p-4 mb-4 border border-[hsl(var(--ph-border))]">
-          <p className="text-sm font-semibold mb-1">Un problème avec cette commande ?</p>
-          <p className="text-xs text-[hsl(var(--ph-ink-soft))] mb-3">
-            Si vous ne pouvez pas la honorer (rupture, erreur), annulez-la : le client est remboursé automatiquement.
-          </p>
-          <button
-            onClick={() => {
-              if (window.confirm(`Annuler la commande #${order.ref} et rembourser ${formatGNF(clientTotal)} au client ?`)) onCancel();
-            }}
-            className="w-full h-10 rounded-xl bg-white border border-red-300 text-red-600 text-sm font-semibold active:scale-[0.98] transition"
-          >
-            Annuler et rembourser
-          </button>
         </div>
       )}
 
@@ -2803,17 +2809,30 @@ function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onCancel }: {
         </button>
       </div>
 
-      <div className="fixed bottom-[calc(4rem+env(safe-area-inset-bottom))] left-4 right-4 z-30">
-        <button
-          onClick={handleSubmit}
-          disabled={!canSubmit}
-          className={`w-full h-12 rounded-full font-semibold text-sm flex items-center justify-center gap-2 active:scale-95 transition ${
-            allUnavailable ? "bg-red-500 text-white" : "ph-btn-primary"
-          }`}
-        >
-          {allUnavailable ? <><X className="h-4 w-4" /> Annuler la commande</> : <><Check className="h-4 w-4" /> Envoyer au client</>}
-        </button>
-      </div>
+      {bottomAction && (
+        <div className="fixed bottom-[calc(4rem+env(safe-area-inset-bottom))] left-4 right-4 z-30">
+          {bottomAction.kind === "submit" ? (
+            <button
+              onClick={handleSubmit}
+              disabled={!canSubmit}
+              className={`w-full h-12 rounded-full font-semibold text-sm flex items-center justify-center gap-2 active:scale-95 transition ${
+                allUnavailable ? "bg-red-500 text-white" : "ph-btn-primary"
+              }`}
+            >
+              {allUnavailable ? <><X className="h-4 w-4" /> Annuler la commande</> : <><Check className="h-4 w-4" /> Envoyer au client</>}
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                if (bottomAction.kind === "cancel" || window.confirm(`${bottomAction.label} la commande #${order.ref} : ${formatGNF(clientTotal)} seront recrédités au client. Confirmer ?`)) onCancel();
+              }}
+              className="w-full h-12 rounded-full bg-white border-2 border-red-400 text-red-600 font-semibold text-sm flex items-center justify-center gap-2 shadow-lg active:scale-95 transition"
+            >
+              <X className="h-4 w-4" /> {bottomAction.label}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
