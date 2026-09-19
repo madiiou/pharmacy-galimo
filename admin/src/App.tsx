@@ -23,7 +23,8 @@ export default function App() {
       <Toaster richColors position="top-center" />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<Pharmacy />} />
+          <Route path="/espaces" element={<Home />} />
           <Route path="/login" element={<Login />} />
           <Route path="/shop" element={<Pharmacy />} />
           <Route path="/pharmacien" element={<Pharmacy />} />
