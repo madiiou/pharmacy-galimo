@@ -11,6 +11,7 @@ import { Badge } from "../components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { useUserRoles } from "../hooks/useUserRoles";
+import { useAuth } from "../auth/AuthContext";
 import { usePharmacies, type Pharmacy } from "../hooks/usePharmacies";
 import { GUINEA_CITIES, DAY_LABELS, DEFAULT_SCHEDULE, isPharmacyOpen, type DaySchedule } from "./Pharmacy";
 import { formatGNF } from "../lib/pharmacy";
@@ -396,6 +397,7 @@ function PharmacyDialog({
 export default function AdminPharmacies() {
   const navigate = useNavigate();
   const { isAdmin, loading } = useUserRoles();
+  const { user, logout } = useAuth();
   const { pharmacies, createPharmacy, updatePharmacy, loading: pharmLoading } = usePharmacies();
   const { statsByPharmacy, statsFor, statusFunnel, clients, clientKpis, originStats, whatsappStats, loading: statsLoading } = useAdminData();
 
@@ -411,7 +413,19 @@ export default function AdminPharmacies() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-6 text-center">
         <h2 className="text-2xl font-semibold">Accès administrateur requis</h2>
-        <Button onClick={() => navigate("/")}>Retour</Button>
+        <p className="text-sm text-muted-foreground max-w-sm">
+          {user ? `Vous êtes connecté avec ${user.email} (${user.role}), ce compte n'a pas accès à la console.` : "Session expirée."}
+          {" "}Connectez-vous avec le compte administrateur Galimo.
+        </p>
+        <Button
+          onClick={() => {
+            logout();
+            navigate("/login?redirect=" + encodeURIComponent("/admin-pharmacies"));
+          }}
+        >
+          Se connecter en administrateur
+        </Button>
+        <Button variant="ghost" onClick={() => navigate("/")}>Retour</Button>
       </div>
     );
   }
