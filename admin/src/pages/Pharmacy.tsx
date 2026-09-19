@@ -2052,6 +2052,44 @@ function PharmacistResponse({ order, getMed, onAccept, onCancel, onBack }: {
   );
 }
 
+// ---------- Regroupement des commandes par jour ----------
+const dayKey = (ts: number) => new Date(ts).toDateString();
+
+function dayLabel(ts: number): string {
+  const d = new Date(ts);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return "Aujourd'hui";
+  if (d.toDateString() === yesterday.toDateString()) return "Hier";
+  return d.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: d.getFullYear() === today.getFullYear() ? undefined : "numeric" });
+}
+
+const orderTime = (ts: number) => new Date(ts).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+
+function OrdersByDay({ orders, render }: { orders: Order[]; render: (o: Order) => React.ReactNode }) {
+  const sorted = [...orders].sort((a, b) => b.createdAt - a.createdAt);
+  const groups: { key: string; label: string; items: Order[] }[] = [];
+  for (const o of sorted) {
+    const k = dayKey(o.createdAt);
+    const last = groups[groups.length - 1];
+    if (last && last.key === k) last.items.push(o);
+    else groups.push({ key: k, label: dayLabel(o.createdAt), items: [o] });
+  }
+  return (
+    <div className="space-y-4">
+      {groups.map((g) => (
+        <section key={g.key}>
+          <h2 className="text-[11px] font-bold uppercase tracking-wider text-[hsl(var(--ph-ink-soft))] mb-2 px-1">
+            {g.label} · {g.items.length}
+          </h2>
+          <div className="space-y-2.5">{g.items.map(render)}</div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 // ---------- Screen 6: Order History ----------
 function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onCancel, onBack }: {
   orders: Order[];
@@ -2064,6 +2102,11 @@ function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onCancel,
 }) {
   const canReorder = (s: OrderStatus) => s === "delivered" || s === "accepted" || s === "ready" || s === "cancelled" || s === "expired";
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [tab, setTab] = useState<"en_cours" | "terminees">("en_cours");
+  const isDone = (o: Order) => ["delivered", "cancelled", "expired"].includes(o.status);
+  const enCours = orders.filter((o) => !isDone(o));
+  const terminees = orders.filter(isDone);
+  const shown = tab === "en_cours" ? enCours : terminees;
   const handleRetryPay = async (o: Order) => {
     if (retryingId) return;
     setRetryingId(o.id);
@@ -2082,15 +2125,30 @@ function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onCancel,
         <h1 className="ph-display font-bold text-xl">Mes commandes</h1>
       </div>
 
-      {orders.length === 0 ? (
-        <div className="text-center py-16 text-[hsl(var(--ph-ink-soft))] text-sm">Aucune commande pour l'instant</div>
+      <div className="flex gap-1.5 bg-[hsl(var(--ph-muted))] rounded-full p-1 mb-4">
+        {([["en_cours", "En cours", enCours.length], ["terminees", "Terminées", terminees.length]] as const).map(([k, label, n]) => (
+          <button
+            key={k}
+            onClick={() => setTab(k)}
+            className={`flex-1 h-9 rounded-full text-xs font-semibold transition ${
+              tab === k ? "bg-white text-[hsl(var(--ph-deep))] shadow-sm" : "text-[hsl(var(--ph-ink-soft))]"
+            }`}
+          >
+            {label} ({n})
+          </button>
+        ))}
+      </div>
+
+      {shown.length === 0 ? (
+        <div className="text-center py-16 text-[hsl(var(--ph-ink-soft))] text-sm">
+          {orders.length === 0 ? "Aucune commande pour l'instant" : tab === "en_cours" ? "Aucune commande en cours" : "Aucune commande terminée"}
+        </div>
       ) : (
-        <div className="space-y-2.5">
-          {orders.map((o) => (
+        <OrdersByDay orders={shown} render={(o) => (
             <div key={o.id} className="ph-card p-4">
              <button onClick={() => onOpen(o)} className="w-full text-left active:scale-[0.99] transition">
               <div className="flex items-center justify-between mb-2">
-                <span className="ph-display font-bold text-sm">#{o.ref}</span>
+                <span className="ph-display font-bold text-sm">#{o.ref} <span className="font-normal text-[11px] text-[hsl(var(--ph-ink-soft))]">· {orderTime(o.createdAt)}</span></span>
                 <StatusBadge status={o.status} paymentStatus={o.paymentStatus} />
               </div>
               <p className="text-xs text-[hsl(var(--ph-ink-soft))] line-clamp-1">
@@ -2154,8 +2212,7 @@ function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onCancel,
                </button>
              )}
             </div>
-          ))}
-        </div>
+        )} />
       )}
     </div>
   );
@@ -2355,7 +2412,11 @@ function PharmacistDashboard({ orders, getMed, onOpen, onGoCatalogue, onGoPhoneO
     .filter(isOrderPaid)
     .reduce((s, o) => s + o.items.reduce((a, i) => a + (i.confirmedPrice || 0) * i.quantity, 0) + (o.deliveryFee || 0), 0);
 
-  const list = tab === "nouvelles" ? nouvelles : tab === "en_cours" ? enCours : terminees;
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const matches = (o: Order) =>
+    !q || o.ref.toLowerCase().includes(q) || o.clientName.toLowerCase().includes(q) || o.clientPhone.replace(/\s/g, "").includes(q.replace(/\s/g, ""));
+  const list = (tab === "nouvelles" ? nouvelles : tab === "en_cours" ? enCours : terminees).filter(matches);
 
   return (
     <div className="px-4 pt-4 pb-24">
@@ -2374,19 +2435,24 @@ function PharmacistDashboard({ orders, getMed, onOpen, onGoCatalogue, onGoPhoneO
               tab === k ? "bg-white text-[hsl(var(--ph-deep))] shadow-sm" : "text-[hsl(var(--ph-ink-soft))]"
             }`}
           >
-            {k === "nouvelles" ? "Nouvelles" : k === "en_cours" ? "En cours" : "Terminées"}
+            {k === "nouvelles" ? `Nouvelles (${nouvelles.length})` : k === "en_cours" ? `En cours (${enCours.length})` : `Terminées (${terminees.length})`}
           </button>
         ))}
       </div>
 
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Rechercher : n° de commande, nom ou téléphone"
+        className="w-full h-10 rounded-full bg-white border border-[hsl(var(--ph-border))] px-4 text-sm mb-4"
+      />
+
       {list.length === 0 ? (
         <div className="text-center py-16 text-[hsl(var(--ph-ink-soft))] text-sm">Aucune commande</div>
       ) : (
-        <div className="space-y-2.5">
-          {list.map((o) => (
-            <PharmOrderCard key={o.id} order={o} getMed={getMed} onOpen={() => onOpen(o)} onMarkDelivered={() => onMarkDelivered(o.id)} />
-          ))}
-        </div>
+        <OrdersByDay orders={list} render={(o) => (
+          <PharmOrderCard key={o.id} order={o} getMed={getMed} onOpen={() => onOpen(o)} onMarkDelivered={() => onMarkDelivered(o.id)} />
+        )} />
       )}
 
       <button
@@ -2418,7 +2484,7 @@ function PharmOrderCard({ order, getMed, onOpen, onMarkDelivered }: { order: Ord
     <div className="ph-card p-4 w-full text-left">
      <button onClick={onOpen} className="w-full text-left active:scale-[0.99] transition">
       <div className="flex items-center justify-between mb-1">
-        <span className="ph-display font-bold text-sm">#{order.ref}</span>
+        <span className="ph-display font-bold text-sm">#{order.ref} <span className="font-normal text-[11px] text-[hsl(var(--ph-ink-soft))]">· {orderTime(order.createdAt)}</span></span>
         <StatusBadge status={order.status} paymentStatus={order.paymentStatus} />
       </div>
       <p className="text-sm font-semibold text-[hsl(var(--ph-ink))]">{order.clientName}</p>
