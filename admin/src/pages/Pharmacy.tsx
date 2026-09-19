@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft, Search, ShoppingCart, Plus, Minus, Trash2, Check, X,
   Phone, Clock, Package, Store, ClipboardList, ChevronRight, Bell,
@@ -985,11 +985,32 @@ export default function Pharmacy() {
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
   const [activePharmOrderId, setActivePharmOrderId] = useState<string | null>(null);
 
+  const payStatusRef = useRef<Map<string, string | undefined>>(new Map());
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+
   const refreshOrders = async () => {
     if (!getToken()) return;
     try {
       const data = await api<any[]>("/orders");
-      setOrders(data.map(apiOrderToDemo));
+      const next = data.map(apiOrderToDemo);
+      // Le resultat reel du paiement arrive apres coup (webhook Galimo) :
+      // on l'annonce quand la commande passe de "en cours" a payee/refusee.
+      if (modeRef.current === "client") {
+        for (const o of next) {
+          const before = payStatusRef.current.get(o.id);
+          if (before === "processing" && o.paymentStatus === "paid") {
+            sonner.success("Paiement confirmé ✓", { description: `Commande #${o.ref}`, duration: 5000 });
+          } else if (before === "processing" && o.paymentStatus === "unpaid") {
+            sonner.error("Paiement refusé", {
+              description: `Commande #${o.ref} : le débit n'a pas été validé. Vous pouvez réessayer.`,
+              duration: 7000,
+            });
+          }
+        }
+      }
+      payStatusRef.current = new Map(next.map((o) => [o.id, o.paymentStatus]));
+      setOrders(next);
     } catch {}
   };
 
@@ -1128,8 +1149,8 @@ export default function Pharmacy() {
             try {
               await api(`/orders/${o.id}/pay`, { method: "POST" });
               await refreshOrders();
-              sonner.success("Demande de paiement renvoyée ✓", {
-                description: "Confirmez le débit dans votre application Galimo.",
+              sonner.info("Demande de paiement renvoyée", {
+                description: "En attente de votre confirmation dans l'application Galimo.",
                 duration: 5000,
               });
             } catch (err) {
@@ -1141,8 +1162,8 @@ export default function Pharmacy() {
               await api(`/orders/${id}/confirm`, { method: "PATCH" });
               await api(`/orders/${id}/pay`, { method: "POST" });
               await refreshOrders();
-              sonner.success("Demande de paiement envoyée ✓", {
-                description: "Confirmez le débit dans votre application Galimo pour finaliser.",
+              sonner.info("Demande de paiement envoyée", {
+                description: "En attente de votre confirmation dans l'application Galimo.",
                 duration: 6000,
               });
               setClientView("history");
