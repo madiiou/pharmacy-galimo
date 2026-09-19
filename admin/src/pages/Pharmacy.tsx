@@ -1077,25 +1077,30 @@ export default function Pharmacy() {
 
   return (
     <div className="pharmacy-scope min-h-screen pb-24">
-      {/* Demo mode toggle */}
-      <div className="ph-gradient sticky top-0 z-40 text-white">
-        <div className="px-4 pt-4 pb-2 flex items-center justify-between">
-          <button
-            onClick={() => navigate("/")}
-            className="h-9 w-9 rounded-full bg-white/15 backdrop-blur flex items-center justify-center active:scale-95"
-            aria-label="Retour"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-          <div className="flex items-center gap-1.5">
-            <div className="h-8 w-8 rounded-full bg-white/15 flex items-center justify-center">
-              <Pill className="h-4 w-4" />
+      {/* Cote client, la page est ouverte dans la webview de l'appli
+          galimo.tech qui a deja sa propre barre (retour + titre) : cette
+          bannière ferait doublon. Gardee uniquement cote pharmacien, ouvert
+          dans un navigateur classique sans chrome natif autour. */}
+      {mode === "pharmacien" && (
+        <div className="ph-gradient sticky top-0 z-40 text-white">
+          <div className="px-4 pt-4 pb-2 flex items-center justify-between">
+            <button
+              onClick={() => navigate("/")}
+              className="h-9 w-9 rounded-full bg-white/15 backdrop-blur flex items-center justify-center active:scale-95"
+              aria-label="Retour"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+            <div className="flex items-center gap-1.5">
+              <div className="h-8 w-8 rounded-full bg-white/15 flex items-center justify-center">
+                <Pill className="h-4 w-4" />
+              </div>
+              <span className="ph-display font-bold text-sm">Galimo Pharmacie</span>
             </div>
-            <span className="ph-display font-bold text-sm">Galimo Pharmacie</span>
+            <div className="w-9" />
           </div>
-          <div className="w-9" />
         </div>
-      </div>
+      )}
 
       {mode === "client" ? (
         <ClientArea
@@ -1465,7 +1470,7 @@ function PharmacyHome({ medicines, pharmacyWhatsapp, pharmacyPhone, pharmacySche
         )}
       </div>
 
-      <div className="ph-gradient text-white sticky top-[92px] z-30 px-4 pt-3 pb-3 shadow-md">
+      <div className="ph-gradient text-white sticky top-0 z-30 px-4 pt-3 pb-3 shadow-md">
         <div className="relative">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[hsl(var(--ph-ink-soft))]" />
           <input
