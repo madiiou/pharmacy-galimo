@@ -19,7 +19,7 @@ export function Home() {
         </Link>
 
         <Link
-          to="/shop?view=pharmacien"
+          to="/pharmacien"
           className="flex items-center gap-4 bg-white rounded-xl shadow p-5 hover:bg-gray-50"
         >
           <Stethoscope className="h-8 w-8 text-purple-700" />

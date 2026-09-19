@@ -26,6 +26,7 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
           <Route path="/shop" element={<Pharmacy />} />
+          <Route path="/pharmacien" element={<Pharmacy />} />
           <Route path="/admin-pharmacies" element={<RequireAuth><AdminPharmacies /></RequireAuth>} />
           <Route path="/pharmacies" element={<Navigate to="/admin-pharmacies" replace />} />
           <Route path="/medicines" element={<RequireAuth><Medicines /></RequireAuth>} />

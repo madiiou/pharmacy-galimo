@@ -13,7 +13,7 @@ import jsPDF from "jspdf";
 const GALIMO_COMMISSION_RATE = 0.10;
 const galimoCommission = (subtotal: number) => Math.round(subtotal * GALIMO_COMMISSION_RATE);
 const pharmacyNet = (subtotal: number) => subtotal - galimoCommission(subtotal);
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { io } from "socket.io-client";
 import { toast as sonner } from "sonner";
 import { formatGNF, generateOrderRef } from "../lib/pharmacy";
@@ -903,17 +903,20 @@ type Mode = "client" | "pharmacien";
 
 export default function Pharmacy() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
 
   const [mode, setMode] = useState<Mode>(
-    searchParams.get("view") === "pharmacien" ? "pharmacien" : "client"
+    location.pathname === "/pharmacien" || searchParams.get("view") === "pharmacien"
+      ? "pharmacien"
+      : "client"
   );
   const [clientView, setClientView] = useState<ClientView>("home");
   const [pharmView, setPharmView] = useState<PharmView>("dashboard");
 
   useEffect(() => {
     if (mode === "pharmacien" && !getToken()) {
-      navigate("/login?redirect=" + encodeURIComponent("/shop?view=pharmacien"));
+      navigate("/login?redirect=" + encodeURIComponent("/pharmacien"));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
