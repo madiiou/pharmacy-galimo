@@ -13,6 +13,7 @@ import { galimoPaymentWebhookRouter } from "./routes/galimoPaymentWebhook.js";
 import { galimoBalanceRouter } from "./routes/galimoBalance.js";
 import { eventsRouter } from "./routes/events.js";
 import { attachChat } from "./chat.js";
+import { startPaymentReconciler } from "./paymentReconciler.js";
 
 // Filet de sécurité : une erreur non attrapée dans une route (ex: contrainte
 // SQL violée) ne doit plus jamais faire tomber tout le serveur et provoquer
@@ -70,4 +71,5 @@ attachChat(httpServer);
 const port = Number(process.env.PORT) || 4000;
 httpServer.listen(port, () => {
   console.log(`pharmacy-galimo-api listening on port ${port}`);
+  startPaymentReconciler();
 });

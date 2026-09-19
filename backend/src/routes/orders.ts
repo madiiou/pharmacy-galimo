@@ -452,8 +452,19 @@ ordersRouter.patch("/:id/cancel", requireAuth, async (req, res) => {
   const order = orderResult.rows[0];
 
   if (order.user_id !== req.user!.sub) return res.status(403).json({ error: "Forbidden" });
-  if (!["awaiting_pharmacist", "awaiting_customer"].includes(order.status)) {
-    return res.status(400).json({ error: "Order can no longer be cancelled" });
+  // Annulable tant qu'aucun argent n'est capté : avant chiffrage/confirmation,
+  // ou une fois confirmée mais non payée (paiement échoué ou refusé). Un
+  // paiement en cours ou déjà réussi passe par le remboursement, pas ici.
+  const cancellable =
+    ["awaiting_pharmacist", "awaiting_customer"].includes(order.status) ||
+    (order.status === "pending" && (!order.payment_status || order.payment_status === "unpaid"));
+  if (!cancellable) {
+    return res.status(400).json({
+      error:
+        order.payment_status === "processing"
+          ? "Un paiement est en cours de traitement, réessayez dans un instant."
+          : "Cette commande ne peut plus être annulée.",
+    });
   }
 
   const result = await pool.query(

@@ -1319,6 +1319,7 @@ function ClientArea(props: {
             setView("cart");
           }}
           onRetryPay={retryPay}
+          onCancel={(o) => cancelOrder(o.id)}
           onBack={() => setView("home")}
         />
       )}
@@ -2052,12 +2053,13 @@ function PharmacistResponse({ order, getMed, onAccept, onCancel, onBack }: {
 }
 
 // ---------- Screen 6: Order History ----------
-function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onBack }: {
+function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onCancel, onBack }: {
   orders: Order[];
   getMed: (id: string) => Medicine;
   onOpen: (o: Order) => void;
   onReorder: (o: Order) => void;
   onRetryPay: (o: Order) => Promise<void>;
+  onCancel: (o: Order) => void;
   onBack: () => void;
 }) {
   const canReorder = (s: OrderStatus) => s === "delivered" || s === "accepted" || s === "ready" || s === "cancelled" || s === "expired";
@@ -2125,6 +2127,14 @@ function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onBack }:
                >
                  {retryingId === o.id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                  {retryingId === o.id ? "Envoi en cours…" : "Paiement échoué — réessayer"}
+               </button>
+             )}
+             {o.status === "accepted" && (o.paymentStatus === "unpaid" || !o.paymentStatus) && (
+               <button
+                 onClick={(e) => { e.stopPropagation(); onCancel(o); }}
+                 className="mt-2 w-full h-10 rounded-xl bg-white border border-red-200 text-red-600 font-semibold text-sm active:scale-[0.98] transition"
+               >
+                 Annuler la commande
                </button>
              )}
              {isOrderPaid(o) && (
