@@ -2219,6 +2219,9 @@ function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onCancel,
 }
 
 function StatusBadge({ status, paymentStatus }: { status: OrderStatus; paymentStatus?: string }) {
+  if (paymentStatus === "refunded") {
+    return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">↩ Remboursée</span>;
+  }
   if ((status === "accepted" || status === "ready") && paymentStatus !== "paid") {
     if (paymentStatus === "processing") {
       return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">⏳ Paiement en cours</span>;
@@ -2328,7 +2331,10 @@ function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedici
               });
               await refreshOrders();
               setView("dashboard");
-              sonner.error(`Commande #${activeOrder.ref} annulée`, { duration: 2500 });
+              sonner.error(
+                isOrderPaid(activeOrder) ? `Commande #${activeOrder.ref} annulée et remboursée` : `Commande #${activeOrder.ref} annulée`,
+                { duration: 2500 }
+              );
             } catch (err) {
               sonner.error("Échec de l'annulation", { description: (err as Error).message });
             }
@@ -2594,6 +2600,30 @@ function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onCancel }: {
           <Phone className="h-5 w-5" />
         </a>
       </div>
+
+      {order.paymentStatus === "refunded" && (
+        <div className="ph-card p-4 mb-4 border border-emerald-200 bg-emerald-50">
+          <p className="text-sm font-semibold text-emerald-700">↩ Commande annulée et remboursée</p>
+          <p className="text-xs text-emerald-700 mt-1">Le montant a été recrédité sur le compte Galimo du client.</p>
+        </div>
+      )}
+
+      {(order.status === "accepted" || order.status === "ready") && isOrderPaid(order) && (
+        <div className="ph-card p-4 mb-4 border border-[hsl(var(--ph-border))]">
+          <p className="text-sm font-semibold mb-1">Un problème avec cette commande ?</p>
+          <p className="text-xs text-[hsl(var(--ph-ink-soft))] mb-3">
+            Si vous ne pouvez pas la honorer (rupture, erreur), annulez-la : le client est remboursé automatiquement.
+          </p>
+          <button
+            onClick={() => {
+              if (window.confirm(`Annuler la commande #${order.ref} et rembourser ${formatGNF(clientTotal)} au client ?`)) onCancel();
+            }}
+            className="w-full h-10 rounded-xl bg-white border border-red-300 text-red-600 text-sm font-semibold active:scale-[0.98] transition"
+          >
+            Annuler et rembourser
+          </button>
+        </div>
+      )}
 
       {paymentRefused && (
         <div className="ph-card p-4 mb-4 border border-red-200 bg-red-50">
