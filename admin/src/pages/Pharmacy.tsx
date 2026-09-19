@@ -2052,6 +2052,78 @@ function PharmacistResponse({ order, getMed, onAccept, onCancel, onBack }: {
   );
 }
 
+// ---------- Remboursement : motif obligatoire ----------
+type RefundInfo = { reason: string; note?: string };
+
+const REFUND_REASONS: { code: string; label: string }[] = [
+  { code: "stock_out", label: "Rupture de stock" },
+  { code: "order_error", label: "Erreur de commande" },
+  { code: "return", label: "Retour du client" },
+  { code: "client_unreachable", label: "Client injoignable" },
+  { code: "other", label: "Autre" },
+];
+
+function RefundDialog({ orderRef, amount, delivered, onConfirm, onClose }: {
+  orderRef: string;
+  amount: number;
+  delivered: boolean;
+  onConfirm: (info: RefundInfo) => void;
+  onClose: () => void;
+}) {
+  const [reason, setReason] = useState<string | null>(null);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const needsNote = reason === "other";
+  const canConfirm = !!reason && (!needsNote || note.trim().length > 0) && !busy;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+        <h2 className="ph-display font-bold text-lg">{delivered ? "Rembourser" : "Annuler et rembourser"} #{orderRef}</h2>
+        <p className="text-xs text-[hsl(var(--ph-ink-soft))] mt-1 mb-4">
+          {formatGNF(amount)} seront recrédités au client. Indiquez le motif :
+        </p>
+        <div className="space-y-2">
+          {REFUND_REASONS.map((r) => (
+            <button
+              key={r.code}
+              onClick={() => setReason(r.code)}
+              className={`w-full h-11 rounded-xl border text-sm font-semibold text-left px-4 transition ${
+                reason === r.code
+                  ? "border-[hsl(var(--ph-purple))] bg-[hsl(var(--ph-purple)/0.08)] text-[hsl(var(--ph-purple))]"
+                  : "border-[hsl(var(--ph-border))] text-[hsl(var(--ph-ink))]"
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+        {reason && (
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            maxLength={300}
+            placeholder={needsNote ? "Précisez le motif (obligatoire)" : "Précision (facultatif)"}
+            className="w-full mt-3 rounded-xl border border-[hsl(var(--ph-border))] p-3 text-sm h-20"
+          />
+        )}
+        <div className="grid grid-cols-2 gap-2 mt-4">
+          <button onClick={onClose} className="h-11 rounded-full bg-white border border-[hsl(var(--ph-border))] text-sm font-semibold">
+            Retour
+          </button>
+          <button
+            disabled={!canConfirm}
+            onClick={() => { setBusy(true); onConfirm({ reason: reason!, note: note.trim() || undefined }); }}
+            className="h-11 rounded-full bg-red-600 text-white text-sm font-semibold disabled:opacity-40"
+          >
+            {busy ? "Envoi…" : "Rembourser"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------- Regroupement des commandes par jour ----------
 const dayKey = (ts: number) => new Date(ts).toDateString();
 
@@ -2271,12 +2343,12 @@ function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedici
           onOpen={(o) => { setActiveOrderId(o.id); setView("order"); }}
           onGoCatalogue={() => setView("catalogue")}
           onGoPhoneOrder={() => setView("phone_order")}
-          onRefund={async (id) => {
+          onRefund={async (id, refund) => {
             const o = orders.find((x) => x.id === id);
             try {
               await api(`/orders/${id}/status`, {
                 method: "PATCH",
-                body: JSON.stringify({ status: "cancelled" }),
+                body: JSON.stringify({ status: "cancelled", refundReason: refund.reason, refundNote: refund.note }),
               });
               await refreshOrders();
               sonner.success("Commande annulée et remboursée ✓", {
@@ -2339,11 +2411,11 @@ function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedici
               sonner.error("Échec de l'envoi", { description: (err as Error).message });
             }
           }}
-          onCancel={async () => {
+          onCancel={async (refund) => {
             try {
               await api(`/orders/${activeOrder.id}/status`, {
                 method: "PATCH",
-                body: JSON.stringify({ status: "cancelled" }),
+                body: JSON.stringify({ status: "cancelled", refundReason: refund?.reason, refundNote: refund?.note }),
               });
               await refreshOrders();
               setView("dashboard");
@@ -2424,7 +2496,7 @@ function PharmacistDashboard({ orders, getMed, onOpen, onGoCatalogue, onGoPhoneO
   onGoCatalogue: () => void;
   onGoPhoneOrder: () => void;
   onMarkDelivered: (id: string) => void;
-  onRefund: (id: string) => void;
+  onRefund: (id: string, refund: RefundInfo) => void;
 }) {
   const [tab, setTab] = useState<"nouvelles" | "en_cours" | "terminees">("nouvelles");
   const nouvelles = orders.filter((o) => o.status === "pending_pharmacist");
@@ -2474,7 +2546,7 @@ function PharmacistDashboard({ orders, getMed, onOpen, onGoCatalogue, onGoPhoneO
         <div className="text-center py-16 text-[hsl(var(--ph-ink-soft))] text-sm">Aucune commande</div>
       ) : (
         <OrdersByDay orders={list} render={(o) => (
-          <PharmOrderCard key={o.id} order={o} getMed={getMed} onOpen={() => onOpen(o)} onMarkDelivered={() => onMarkDelivered(o.id)} onRefund={() => onRefund(o.id)} />
+          <PharmOrderCard key={o.id} order={o} getMed={getMed} onOpen={() => onOpen(o)} onMarkDelivered={() => onMarkDelivered(o.id)} onRefund={(refund) => onRefund(o.id, refund)} />
         )} />
       )}
 
@@ -2500,7 +2572,9 @@ function StatCard({ label, value, tone, small }: { label: string; value: string;
   );
 }
 
-function PharmOrderCard({ order, getMed, onOpen, onMarkDelivered, onRefund }: { order: Order; getMed: (id: string) => Medicine; onOpen: () => void; onMarkDelivered: () => void; onRefund: () => void }) {
+function PharmOrderCard({ order, getMed, onOpen, onMarkDelivered, onRefund }: { order: Order; getMed: (id: string) => Medicine; onOpen: () => void; onMarkDelivered: () => void; onRefund: (refund: RefundInfo) => void }) {
+  const [refundOpen, setRefundOpen] = useState(false);
+  const refundAmount = order.items.filter((i) => i.isAvailable).reduce((sum, i) => sum + (i.confirmedPrice || 0) * i.quantity, 0);
   const isPaid = (order.status === "accepted" || order.status === "ready") && isOrderPaid(order);
 
   return (
@@ -2525,11 +2599,7 @@ function PharmOrderCard({ order, getMed, onOpen, onMarkDelivered, onRefund }: { 
      </button>
      {order.status === "delivered" && isOrderPaid(order) && (
        <button
-         onClick={(e) => {
-           e.stopPropagation();
-           const total = order.items.filter((i) => i.isAvailable).reduce((sum, i) => sum + (i.confirmedPrice || 0) * i.quantity, 0);
-           if (window.confirm(`Rembourser la commande #${order.ref} (${formatGNF(total)}) au client ?`)) onRefund();
-         }}
+         onClick={(e) => { e.stopPropagation(); setRefundOpen(true); }}
          className="mt-3 w-full h-10 rounded-full bg-white border border-red-300 text-red-600 text-xs font-bold active:scale-[0.98] transition"
        >
          Rembourser le client
@@ -2550,16 +2620,21 @@ function PharmOrderCard({ order, getMed, onOpen, onMarkDelivered, onRefund }: { 
            ✓ Marquer comme {order.deliveryMode === "livraison" ? "livrée" : "retirée"}
          </button>
          <button
-           onClick={(e) => {
-             e.stopPropagation();
-             const total = order.items.filter((i) => i.isAvailable).reduce((sum, i) => sum + (i.confirmedPrice || 0) * i.quantity, 0);
-             if (window.confirm(`Annuler la commande #${order.ref} et rembourser ${formatGNF(total)} au client ?`)) onRefund();
-           }}
+           onClick={(e) => { e.stopPropagation(); setRefundOpen(true); }}
            className="mt-2 w-full h-10 rounded-full bg-white border border-red-300 text-red-600 text-xs font-bold active:scale-[0.98] transition"
          >
            Annuler et rembourser
          </button>
        </div>
+     )}
+     {refundOpen && (
+       <RefundDialog
+         orderRef={order.ref}
+         amount={refundAmount}
+         delivered={order.status === "delivered"}
+         onConfirm={(info) => { onRefund(info); setRefundOpen(false); }}
+         onClose={() => setRefundOpen(false)}
+       />
      )}
     </div>
   );
@@ -2571,7 +2646,7 @@ function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onCancel }: {
   getMed: (id: string) => Medicine;
   onBack: () => void;
   onSubmit: (order: Order) => void;
-  onCancel: () => void;
+  onCancel: (refund?: RefundInfo) => void;
 }) {
   const paymentRefused = order.status === "accepted" && !isOrderPaid(order) && order.paymentStatus !== "processing";
   // Une commande deja chiffree stocke le prix CLIENT (majore de 10%) ; le
@@ -2619,6 +2694,8 @@ function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onCancel }: {
           ? { kind: "cancel", label: "Annuler la commande" }
           : null;
 
+  const [refundOpen, setRefundOpen] = useState(false);
+
   const handleSubmit = () => {
     onSubmit({
       ...order,
@@ -2665,7 +2742,7 @@ function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onCancel }: {
             Le client peut réessayer de payer de son côté, ou tu peux annuler la commande si tu ne veux plus l'honorer.
           </p>
           <button
-            onClick={onCancel}
+            onClick={() => onCancel()}
             className="w-full h-10 rounded-xl bg-red-600 text-white text-sm font-semibold active:scale-[0.98] transition"
           >
             Annuler la commande
@@ -2823,15 +2900,22 @@ function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onCancel }: {
             </button>
           ) : (
             <button
-              onClick={() => {
-                if (bottomAction.kind === "cancel" || window.confirm(`${bottomAction.label} la commande #${order.ref} : ${formatGNF(clientTotal)} seront recrédités au client. Confirmer ?`)) onCancel();
-              }}
+              onClick={() => (bottomAction.kind === "cancel" ? onCancel() : setRefundOpen(true))}
               className="w-full h-12 rounded-full bg-white border-2 border-red-400 text-red-600 font-semibold text-sm flex items-center justify-center gap-2 shadow-lg active:scale-95 transition"
             >
               <X className="h-4 w-4" /> {bottomAction.label}
             </button>
           )}
         </div>
+      )}
+      {refundOpen && (
+        <RefundDialog
+          orderRef={order.ref}
+          amount={clientTotal}
+          delivered={order.status === "delivered"}
+          onConfirm={(info) => { onCancel(info); setRefundOpen(false); }}
+          onClose={() => setRefundOpen(false)}
+        />
       )}
     </div>
   );

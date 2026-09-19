@@ -548,9 +548,13 @@ ordersRouter.patch("/:id/price", requireAuth, requireRole("admin", "pharmacy_par
   }
 });
 
+const REFUND_REASONS = ["stock_out", "order_error", "return", "client_unreachable", "other"] as const;
+
 const statusSchema = z.object({
   status: z.enum(ORDER_STATUSES).optional(),
   paymentStatus: z.enum(["unpaid", "paid"]).optional(),
+  refundReason: z.enum(REFUND_REASONS).optional(),
+  refundNote: z.string().trim().max(300).optional(),
 });
 
 // Mise à jour du statut (partenaire de la pharmacie ou admin)
@@ -564,7 +568,7 @@ ordersRouter.patch("/:id/status", requireAuth, requireRole("admin", "pharmacy_pa
 
   const parsed = statusSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const { status, paymentStatus } = parsed.data;
+  const { status, paymentStatus, refundReason, refundNote } = parsed.data;
 
   // On ne rembourse que si un débit a réellement abouti (payment_status
   // 'paid', posé uniquement par le webhook sur debit.completed) : un débit
@@ -575,7 +579,15 @@ ordersRouter.patch("/:id/status", requireAuth, requireRole("admin", "pharmacy_pa
   // ne re-déclenche pas de remboursement puisque payment_status ne vaut
   // alors plus 'paid'.
   let finalPaymentStatus: string | null = paymentStatus ?? null;
-  if (status === "cancelled" && order.payment_status === "paid") {
+  const isRefund = status === "cancelled" && order.payment_status === "paid";
+  if (isRefund) {
+    // Motif obligatoire : on ne rembourse jamais sans savoir pourquoi.
+    if (!refundReason) {
+      return res.status(400).json({ error: "Un motif de remboursement est obligatoire." });
+    }
+    if (refundReason === "other" && !refundNote) {
+      return res.status(400).json({ error: "Précisez le motif du remboursement." });
+    }
     if (!order.payment_reference) {
       return res.status(500).json({ error: "Paid order has no payment_reference — cannot refund" });
     }
@@ -591,10 +603,14 @@ ordersRouter.patch("/:id/status", requireAuth, requireRole("admin", "pharmacy_pa
     `UPDATE orders SET
        status = COALESCE($1, status),
        payment_status = COALESCE($2, payment_status),
+       refund_reason = CASE WHEN $4::boolean THEN $5 ELSE refund_reason END,
+       refund_note = CASE WHEN $4::boolean THEN $6 ELSE refund_note END,
+       refunded_by = CASE WHEN $4::boolean THEN $7::uuid ELSE refunded_by END,
+       refunded_at = CASE WHEN $4::boolean THEN now() ELSE refunded_at END,
        updated_at = now()
      WHERE id = $3
      RETURNING *`,
-    [status ?? null, finalPaymentStatus, order.id]
+    [status ?? null, finalPaymentStatus, order.id, isRefund, refundReason ?? null, refundNote ?? null, req.user!.sub]
   );
   notifyOrderChange(result.rows[0]);
   res.json(result.rows[0]);
