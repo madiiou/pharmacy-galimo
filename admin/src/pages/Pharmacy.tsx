@@ -2271,6 +2271,22 @@ function PharmacistArea({ view, setView, orders, setOrders, medicines, setMedici
           onOpen={(o) => { setActiveOrderId(o.id); setView("order"); }}
           onGoCatalogue={() => setView("catalogue")}
           onGoPhoneOrder={() => setView("phone_order")}
+          onRefund={async (id) => {
+            const o = orders.find((x) => x.id === id);
+            try {
+              await api(`/orders/${id}/status`, {
+                method: "PATCH",
+                body: JSON.stringify({ status: "cancelled" }),
+              });
+              await refreshOrders();
+              sonner.success("Commande annulée et remboursée ✓", {
+                description: o ? `#${o.ref} : le client est remboursé.` : undefined,
+                duration: 3000,
+              });
+            } catch (err) {
+              sonner.error("Remboursement impossible", { description: (err as Error).message });
+            }
+          }}
           onMarkDelivered={async (id) => {
             const o = orders.find((x) => x.id === id);
             try {
@@ -2401,13 +2417,14 @@ function PharmTabBar({ view, setView, nouvelles }: { view: PharmView; setView: (
 }
 
 // ---------- Pharm 1: Dashboard ----------
-function PharmacistDashboard({ orders, getMed, onOpen, onGoCatalogue, onGoPhoneOrder, onMarkDelivered }: {
+function PharmacistDashboard({ orders, getMed, onOpen, onGoCatalogue, onGoPhoneOrder, onMarkDelivered, onRefund }: {
   orders: Order[];
   getMed: (id: string) => Medicine;
   onOpen: (o: Order) => void;
   onGoCatalogue: () => void;
   onGoPhoneOrder: () => void;
   onMarkDelivered: (id: string) => void;
+  onRefund: (id: string) => void;
 }) {
   const [tab, setTab] = useState<"nouvelles" | "en_cours" | "terminees">("nouvelles");
   const nouvelles = orders.filter((o) => o.status === "pending_pharmacist");
@@ -2457,7 +2474,7 @@ function PharmacistDashboard({ orders, getMed, onOpen, onGoCatalogue, onGoPhoneO
         <div className="text-center py-16 text-[hsl(var(--ph-ink-soft))] text-sm">Aucune commande</div>
       ) : (
         <OrdersByDay orders={list} render={(o) => (
-          <PharmOrderCard key={o.id} order={o} getMed={getMed} onOpen={() => onOpen(o)} onMarkDelivered={() => onMarkDelivered(o.id)} />
+          <PharmOrderCard key={o.id} order={o} getMed={getMed} onOpen={() => onOpen(o)} onMarkDelivered={() => onMarkDelivered(o.id)} onRefund={() => onRefund(o.id)} />
         )} />
       )}
 
@@ -2483,7 +2500,7 @@ function StatCard({ label, value, tone, small }: { label: string; value: string;
   );
 }
 
-function PharmOrderCard({ order, getMed, onOpen, onMarkDelivered }: { order: Order; getMed: (id: string) => Medicine; onOpen: () => void; onMarkDelivered: () => void }) {
+function PharmOrderCard({ order, getMed, onOpen, onMarkDelivered, onRefund }: { order: Order; getMed: (id: string) => Medicine; onOpen: () => void; onMarkDelivered: () => void; onRefund: () => void }) {
   const isPaid = (order.status === "accepted" || order.status === "ready") && isOrderPaid(order);
 
   return (
@@ -2519,6 +2536,16 @@ function PharmOrderCard({ order, getMed, onOpen, onMarkDelivered }: { order: Ord
            className="w-full h-10 rounded-full bg-emerald-500 text-white text-xs font-bold active:scale-[0.98] transition"
          >
            ✓ Marquer comme {order.deliveryMode === "livraison" ? "livrée" : "retirée"}
+         </button>
+         <button
+           onClick={(e) => {
+             e.stopPropagation();
+             const total = order.items.filter((i) => i.isAvailable).reduce((sum, i) => sum + (i.confirmedPrice || 0) * i.quantity, 0);
+             if (window.confirm(`Annuler la commande #${order.ref} et rembourser ${formatGNF(total)} au client ?`)) onRefund();
+           }}
+           className="mt-2 w-full h-10 rounded-full bg-white border border-red-300 text-red-600 text-xs font-bold active:scale-[0.98] transition"
+         >
+           Annuler et rembourser
          </button>
        </div>
      )}
