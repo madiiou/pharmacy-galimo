@@ -6,13 +6,6 @@ import {
   RotateCcw, BarChart3, Printer, CalendarClock, TrendingUp, AlertTriangle, Wallet,
 } from "lucide-react";
 import jsPDF from "jspdf";
-
-// ============================================================
-// COMMISSION GALIMO — 10% du sous-total médicaments (hors transport)
-// ============================================================
-const GALIMO_COMMISSION_RATE = 0.10;
-const galimoCommission = (subtotal: number) => Math.round(subtotal * GALIMO_COMMISSION_RATE);
-const pharmacyNet = (subtotal: number) => subtotal - galimoCommission(subtotal);
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { io } from "socket.io-client";
 import { toast as sonner } from "sonner";
@@ -2450,13 +2443,20 @@ function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onCancel }: {
   onCancel: () => void;
 }) {
   const paymentRefused = order.status === "accepted" && !isOrderPaid(order) && order.paymentStatus !== "processing";
+  // Une commande deja chiffree stocke le prix CLIENT (majore de 10%) ; le
+  // formulaire montre lui le prix PHARMACIE, donc on redescend avant d'afficher
+  // sinon la majoration serait comptee deux fois a l'ecran.
+  const alreadyPriced = order.status !== "pending_pharmacist";
   const [items, setItems] = useState<OrderItem[]>(
     order.items.map((i) => {
       const m = getMed(i.medicineId);
       return {
         ...i,
         isAvailable: i.isAvailable ?? true,
-        confirmedPrice: i.confirmedPrice ?? pharmacistPrice(m),
+        confirmedPrice:
+          i.confirmedPrice != null
+            ? alreadyPriced ? Math.round(i.confirmedPrice / 1.1) : i.confirmedPrice
+            : pharmacistPrice(m),
       };
     })
   );
@@ -2466,6 +2466,14 @@ function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onCancel }: {
   const availableItems = items.filter((i) => i.isAvailable);
   const subtotal = availableItems.reduce((s, i) => s + (Number(i.confirmedPrice) || 0) * i.quantity, 0);
   const total = subtotal;
+  // Ce que le client paie reellement : prix stocke tel quel si deja chiffre,
+  // sinon prix pharmacie majore de 10% par unite (comme le fait le backend).
+  const storedPrice = (medicineId: string) => order.items.find((o) => o.medicineId === medicineId)?.confirmedPrice ?? 0;
+  const clientTotal = availableItems.reduce(
+    (s, i) =>
+      s + (alreadyPriced ? storedPrice(i.medicineId) : Math.round((Number(i.confirmedPrice) || 0) * 1.1)) * i.quantity,
+    0
+  );
   const allUnavailable = availableItems.length === 0;
   const canSubmit = allUnavailable || availableItems.every((i) => Number(i.confirmedPrice) > 0);
 
@@ -2630,11 +2638,11 @@ function PharmacistOrderDetail({ order, getMed, onBack, onSubmit, onCancel }: {
           <div className="mt-2 pt-2 border-t border-dashed border-[hsl(var(--ph-border))] space-y-1">
             <div className="flex justify-between text-[11px] text-[hsl(var(--ph-ink-soft))]">
               <span>+ Frais de service (à la charge du client)</span>
-              <span className="font-semibold">+{formatGNF(galimoCommission(subtotal))}</span>
+              <span className="font-semibold">+{formatGNF(clientTotal - total)}</span>
             </div>
             <div className="flex justify-between text-xs">
               <span className="font-semibold text-emerald-700">Total payé par le client</span>
-              <span className="font-bold text-emerald-700">{formatGNF(total + galimoCommission(subtotal))}</span>
+              <span className="font-bold text-emerald-700">{formatGNF(clientTotal)}</span>
             </div>
             <p className="text-[10px] text-[hsl(var(--ph-ink-soft))] leading-tight pt-0.5">
               Le transport n'est pas soumis à commission — la pharmacie reçoit son montant plein.
