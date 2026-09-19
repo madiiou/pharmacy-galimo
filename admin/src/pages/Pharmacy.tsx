@@ -992,7 +992,7 @@ export default function Pharmacy() {
   const refreshOrders = async () => {
     if (!getToken()) return;
     try {
-      const data = await api<any[]>("/orders");
+      const data = await api<any[]>(modeRef.current === "client" ? "/orders?mine=1" : "/orders");
       const next = data.map(apiOrderToDemo);
       // Le resultat reel du paiement arrive apres coup (webhook Galimo) :
       // on l'annonce quand la commande passe de "en cours" a payee/refusee.

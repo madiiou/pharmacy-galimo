@@ -247,6 +247,16 @@ const ORDERS_WITH_ITEMS_SELECT = `
 ordersRouter.get("/", requireAuth, async (req, res) => {
   const { sub, role } = req.user!;
 
+  // ?mine=1 : l'espace client ne doit montrer que les commandes de la
+  // personne connectee, meme si son compte est admin ou pharmacien.
+  if (req.query.mine === "1") {
+    const result = await pool.query(
+      `${ORDERS_WITH_ITEMS_SELECT} WHERE o.user_id = $1 ORDER BY o.created_at DESC`,
+      [sub]
+    );
+    return res.json(result.rows);
+  }
+
   if (role === "admin") {
     const result = await pool.query(`${ORDERS_WITH_ITEMS_SELECT} ORDER BY o.created_at DESC`);
     return res.json(result.rows);
