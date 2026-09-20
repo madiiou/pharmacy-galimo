@@ -11,7 +11,7 @@ interface User {
 interface AuthState {
   user: User | null;
   token: string | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<User>;
   logout: () => void;
 }
 
@@ -50,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.history.replaceState({}, "", window.location.pathname + (rest ? `?${rest}` : "") + window.location.hash);
   }, []);
 
-  async function login(email: string, password: string) {
+  async function login(email: string, password: string): Promise<User> {
     const result = await api<{ token: string; user: User }>("/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
@@ -59,6 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("user", JSON.stringify(result.user));
     setToken(result.token);
     setUser(result.user);
+    return result.user;
   }
 
   function logout() {

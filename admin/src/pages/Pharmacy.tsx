@@ -3,13 +3,14 @@ import {
   ArrowLeft, Search, ShoppingCart, Plus, Minus, Trash2, Check, X,
   Phone, Clock, Package, Store, ClipboardList, ChevronRight, Bell,
   MapPin, AlertCircle, CheckCircle2, Sparkles, Pill, Edit3, Upload, Loader2,
-  RotateCcw, BarChart3, Printer, CalendarClock, TrendingUp, AlertTriangle, Wallet,
+  RotateCcw, BarChart3, Printer, CalendarClock, TrendingUp, AlertTriangle, Wallet, LogOut,
 } from "lucide-react";
 import jsPDF from "jspdf";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { io } from "socket.io-client";
 import { toast as sonner } from "sonner";
 import { formatGNF, generateOrderRef } from "../lib/pharmacy";
+import { useAuth } from "../auth/AuthContext";
 import { api, getToken } from "../api";
 
 import imgDoliprane from "../assets/meds/doliprane.jpg";
@@ -898,6 +899,12 @@ type Mode = "client" | "pharmacien";
 
 export default function Pharmacy() {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
+  const signOut = () => {
+    if (!window.confirm("Se déconnecter ?")) return;
+    logout();
+    navigate("/login?redirect=" + encodeURIComponent("/pharmacien"), { replace: true });
+  };
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
@@ -1114,17 +1121,35 @@ export default function Pharmacy() {
             {/* Pas de flèche de retour ici : elle renvoyait à l'espace client
                 depuis n'importe quel écran. Chaque écran pharmacien a son
                 propre retour, et la barre du bas sert à naviguer. */}
-            <div className="mx-auto flex items-center gap-1.5">
+            <div className="w-9" />
+            <div className="flex items-center gap-1.5">
               <div className="h-8 w-8 rounded-full bg-white/15 flex items-center justify-center">
                 <Pill className="h-4 w-4" />
               </div>
               <span className="ph-display font-bold text-sm">Galimo Pharmacie</span>
             </div>
+            <button
+              onClick={signOut}
+              className="h-9 w-9 rounded-full bg-white/15 backdrop-blur flex items-center justify-center active:scale-95"
+              aria-label="Se déconnecter"
+              title="Se déconnecter"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
           </div>
         </div>
       )}
 
-      {mode === "client" ? (
+      {mode === "pharmacien" && user?.role === "user" ? (
+        <div className="px-6 pt-16 text-center">
+          <div className="text-5xl mb-3">🔒</div>
+          <h2 className="ph-display font-bold text-lg">Ce compte n'est pas un compte pharmacie</h2>
+          <p className="text-sm text-[hsl(var(--ph-ink-soft))] mt-2">
+            Connectez-vous avec le compte de votre pharmacie pour accéder à cet espace.
+          </p>
+          <button onClick={signOut} className="ph-btn-primary w-full h-12 mt-6">Changer de compte</button>
+        </div>
+      ) : mode === "client" ? (
         <ClientIdentityContext.Provider value={identity}>
         <ClientArea
           view={clientView}
@@ -2524,9 +2549,16 @@ function PharmacistDashboard({ orders, getMed, onOpen, onGoCatalogue, onGoPhoneO
   const enCours = orders.filter((o) => ["awaiting_client", "accepted", "ready"].includes(o.status));
   const terminees = orders.filter((o) => ["delivered", "cancelled", "expired"].includes(o.status));
 
+  // Encaissé aujourd'hui par la pharmacie : commandes payées du jour (les
+  // remboursées sont exclues), au prix net, sans les frais de service du client.
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
   const gainToday = orders
-    .filter(isOrderPaid)
-    .reduce((s, o) => s + o.items.reduce((a, i) => a + (i.confirmedPrice || 0) * i.quantity, 0) + (o.deliveryFee || 0), 0);
+    .filter((o) => isOrderPaid(o) && o.createdAt >= startOfToday.getTime())
+    .reduce((s, o) => {
+      const clientSubtotal = o.items.reduce((a, i) => a + (i.isAvailable === false ? 0 : (i.confirmedPrice || 0) * i.quantity), 0);
+      return s + Math.round(clientSubtotal / 1.1) + (o.deliveryFee || 0);
+    }, 0);
 
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
