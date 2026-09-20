@@ -1451,7 +1451,7 @@ function PharmacyHome({ medicines, pharmacyWhatsapp, pharmacyPhone, pharmacySche
               </div>
               {pharmacyWhatsapp && (
                 <a
-                  href={whatsappUrl(pharmacyWhatsapp, "Bonjour, j'ai une question.", who)}
+                  href={whatsappUrl(pharmacyWhatsapp, "Bonjour, je veux des médicaments.", who)}
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="Contacter la pharmacie sur WhatsApp"
