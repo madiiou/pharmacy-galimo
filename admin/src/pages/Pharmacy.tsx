@@ -1109,20 +1109,15 @@ export default function Pharmacy() {
       {mode === "pharmacien" && (
         <div className="ph-gradient sticky top-0 z-40 text-white">
           <div className="px-4 pt-4 pb-2 flex items-center justify-between">
-            <button
-              onClick={() => navigate("/")}
-              className="h-9 w-9 rounded-full bg-white/15 backdrop-blur flex items-center justify-center active:scale-95"
-              aria-label="Retour"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </button>
-            <div className="flex items-center gap-1.5">
+            {/* Pas de flèche de retour ici : elle renvoyait à l'espace client
+                depuis n'importe quel écran. Chaque écran pharmacien a son
+                propre retour, et la barre du bas sert à naviguer. */}
+            <div className="mx-auto flex items-center gap-1.5">
               <div className="h-8 w-8 rounded-full bg-white/15 flex items-center justify-center">
                 <Pill className="h-4 w-4" />
               </div>
               <span className="ph-display font-bold text-sm">Galimo Pharmacie</span>
             </div>
-            <div className="w-9" />
           </div>
         </div>
       )}
@@ -3115,7 +3110,14 @@ function PhoneOrderCompose({ medicines, pharmacyId, onDone, onBack }: {
     return l;
   }, [medicines, category, search]);
   const cartCount = cart.reduce((s, l) => s + l.quantity, 0);
-  const cartTotal = cart.reduce((s, l) => s + pharmacistPrice(getMed(l.medicineId)) * l.quantity, 0);
+  // Prix net pharmacie modifiable ligne par ligne (remise, prix du jour…) ;
+  // le serveur applique ensuite les frais de service au prix saisi.
+  const [priceOverrides, setPriceOverrides] = useState<Record<string, number>>({});
+  const unitPrice = (id: string) => priceOverrides[id] ?? pharmacistPrice(getMed(id));
+  const cartTotal = cart.reduce((s, l) => s + unitPrice(l.medicineId) * l.quantity, 0);
+  // Même arrondi que le serveur (par unité), pour afficher exactement ce que le client paiera.
+  const clientTotal = cart.reduce((s, l) => s + Math.round(unitPrice(l.medicineId) * 1.1) * l.quantity, 0);
+  const pricesValid = cart.every((l) => unitPrice(l.medicineId) > 0);
 
   const addToCart = (id: string) => {
     setCart((p) => {
@@ -3141,7 +3143,7 @@ function PhoneOrderCompose({ medicines, pharmacyId, onDone, onBack }: {
           items: cart.map((l) => ({
             medicineId: l.medicineId,
             quantity: l.quantity,
-            unitPrice: pharmacistPrice(getMed(l.medicineId)),
+            unitPrice: unitPrice(l.medicineId),
           })),
         }),
       });
@@ -3278,10 +3280,21 @@ function PhoneOrderCompose({ medicines, pharmacyId, onDone, onBack }: {
           {cart.map((l) => {
             const m = getMed(l.medicineId);
             return (
-              <div key={l.medicineId} className="py-2 flex items-center justify-between gap-2">
+              <div key={l.medicineId} className="py-2.5 flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-sm font-medium line-clamp-1">{m.name}</p>
-                  <p className="text-xs text-[hsl(var(--ph-ink-soft))]">{formatGNF(pharmacistPrice(m))} × {l.quantity}</p>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      value={unitPrice(l.medicineId)}
+                      onChange={(e) => setPriceOverrides((p) => ({ ...p, [l.medicineId]: Math.max(0, Math.round(Number(e.target.value) || 0)) }))}
+                      aria-label={`Prix unitaire de ${m.name}`}
+                      className="w-24 h-8 rounded-lg border border-[hsl(var(--ph-border))] px-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[hsl(var(--ph-purple-2))]"
+                    />
+                    <span className="text-xs text-[hsl(var(--ph-ink-soft))]">GNF × {l.quantity}</span>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <button onClick={() => updateQty(l.medicineId, l.quantity - 1)} className="h-7 w-7 rounded-full bg-[hsl(var(--ph-muted))] flex items-center justify-center"><Minus className="h-3 w-3" /></button>
@@ -3299,13 +3312,23 @@ function PhoneOrderCompose({ medicines, pharmacyId, onDone, onBack }: {
           <input value={notes} onChange={(e) => setNotes(e.target.value)} className="ph-card w-full mt-1 px-3 py-2.5 text-sm outline-none" />
         </div>
 
-        <div className="flex items-center justify-between ph-card p-3">
-          <span className="text-sm font-semibold">Total</span>
-          <span className="text-base font-bold text-[hsl(var(--ph-purple))]">{formatGNF(cartTotal)}</span>
+        <div className="ph-card p-3 space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold">Total pour la pharmacie</span>
+            <span className="text-base font-bold text-[hsl(var(--ph-purple))]">{formatGNF(cartTotal)}</span>
+          </div>
+          <div className="flex items-center justify-between text-[11px] text-[hsl(var(--ph-ink-soft))]">
+            <span>+ Frais de service (à la charge du client)</span>
+            <span className="font-semibold">+{formatGNF(clientTotal - cartTotal)}</span>
+          </div>
+          <div className="flex items-center justify-between pt-1.5 border-t border-dashed border-[hsl(var(--ph-border))]">
+            <span className="text-xs font-semibold text-emerald-700">Total payé par le client</span>
+            <span className="text-sm font-bold text-emerald-700">{formatGNF(clientTotal)}</span>
+          </div>
         </div>
 
         <button
-          disabled={cart.length === 0 || sending}
+          disabled={cart.length === 0 || !pricesValid || sending}
           onClick={sendQuote}
           className="ph-btn-primary w-full h-12"
         >
