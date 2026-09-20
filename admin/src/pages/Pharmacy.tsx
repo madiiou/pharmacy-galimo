@@ -3097,7 +3097,20 @@ function PhoneOrderCompose({ medicines, pharmacyId, onDone, onBack }: {
   const [sending, setSending] = useState(false);
 
   const getMed = (id: string) => medicines.find((m) => m.id === id)!;
-  const filtered = category === "all" ? medicines : medicines.filter((m) => m.category === category);
+  const [search, setSearch] = useState("");
+  const filtered = useMemo(() => {
+    const norm = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    let l = category === "all" ? medicines : medicines.filter((m) => m.category === category);
+    const q = norm(search.trim());
+    if (q) {
+      const terms = (SYMPTOM_ALIASES[search.trim().toLowerCase()] ?? [q]).map(norm);
+      l = l.filter((m) => {
+        const text = norm(`${m.name} ${m.dosage} ${m.description} ${m.indications?.join(" ") ?? ""}`);
+        return terms.some((t) => text.includes(t));
+      });
+    }
+    return l;
+  }, [medicines, category, search]);
   const cartCount = cart.reduce((s, l) => s + l.quantity, 0);
   const cartTotal = cart.reduce((s, l) => s + pharmacistPrice(getMed(l.medicineId)) * l.quantity, 0);
 
@@ -3141,12 +3154,15 @@ function PhoneOrderCompose({ medicines, pharmacyId, onDone, onBack }: {
     }
   }
 
-  const Header = ({ title, back }: { title: string; back: () => void }) => (
-    <div className="ph-gradient sticky top-0 z-40 text-white px-4 pt-4 pb-3 flex items-center gap-3">
-      <button onClick={back} className="h-9 w-9 rounded-full bg-white/15 backdrop-blur flex items-center justify-center active:scale-95">
-        <ArrowLeft className="h-4 w-4" />
-      </button>
-      <h1 className="ph-display font-bold text-lg">{title}</h1>
+  const Header = ({ title, back, children }: { title: string; back: () => void; children?: React.ReactNode }) => (
+    <div className="ph-gradient sticky top-0 z-40 text-white px-4 pt-4 pb-3">
+      <div className="flex items-center gap-3">
+        <button onClick={back} className="h-9 w-9 rounded-full bg-white/15 backdrop-blur flex items-center justify-center active:scale-95">
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <h1 className="ph-display font-bold text-lg">{title}</h1>
+      </div>
+      {children}
     </div>
   );
 
@@ -3189,7 +3205,17 @@ function PhoneOrderCompose({ medicines, pharmacyId, onDone, onBack }: {
   if (step === "browse") {
     return (
       <div className="min-h-screen pb-28">
-        <Header title={customerName || customerPhone} back={() => setStep("customer")} />
+        <Header title={customerName || customerPhone} back={() => setStep("customer")}>
+          <div className="relative mt-3">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[hsl(var(--ph-ink-soft))]" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Rechercher un médicament ou un symptôme…"
+              className="w-full h-11 pl-10 pr-4 rounded-full bg-white text-[hsl(var(--ph-ink))] placeholder:text-[hsl(var(--ph-ink-soft))] text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ph-purple-2))]"
+            />
+          </div>
+        </Header>
         <div className="px-4 pt-3 flex gap-2 overflow-x-auto hide-scrollbar">
           {CATEGORIES.map((c) => (
             <button
@@ -3224,7 +3250,7 @@ function PhoneOrderCompose({ medicines, pharmacyId, onDone, onBack }: {
             );
           })}
           {filtered.length === 0 && (
-            <p className="col-span-2 text-center text-sm text-[hsl(var(--ph-ink-soft))] py-10">Aucun médicament dans cette catégorie.</p>
+            <p className="col-span-2 text-center text-sm text-[hsl(var(--ph-ink-soft))] py-10">{search ? `Aucun résultat pour « ${search} ».` : "Aucun médicament dans cette catégorie."}</p>
           )}
         </div>
         {cartCount > 0 && (
