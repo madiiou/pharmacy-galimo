@@ -3089,7 +3089,7 @@ function PhoneOrderCompose({ medicines, pharmacyId, onDone, onBack }: {
   onBack: () => void;
 }) {
   const [step, setStep] = useState<"customer" | "browse" | "cart">("customer");
-  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("+224 ");
   const [customerName, setCustomerName] = useState("");
   const [category, setCategory] = useState<Category>("all");
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -3097,6 +3097,9 @@ function PhoneOrderCompose({ medicines, pharmacyId, onDone, onBack }: {
   const [sending, setSending] = useState(false);
 
   const getMed = (id: string) => medicines.find((m) => m.id === id)!;
+  // Numéro guinéen : 9 chiffres après l'indicatif +224.
+  const phoneDigits = customerPhone.replace(/\D/g, "").replace(/^224/, "");
+  const phoneValid = phoneDigits.length === 9;
   const [search, setSearch] = useState("");
   const filtered = useMemo(() => {
     const norm = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -3132,7 +3135,7 @@ function PhoneOrderCompose({ medicines, pharmacyId, onDone, onBack }: {
         method: "POST",
         body: JSON.stringify({
           pharmacyId,
-          customerPhone,
+          customerPhone: `+224${phoneDigits}`,
           customerName: customerName || undefined,
           notes: notes || undefined,
           items: cart.map((l) => ({
@@ -3177,6 +3180,7 @@ function PhoneOrderCompose({ medicines, pharmacyId, onDone, onBack }: {
             <input
               value={customerPhone}
               onChange={(e) => setCustomerPhone(e.target.value)}
+              inputMode="tel"
               placeholder="+224 6XX XX XX XX"
               className="ph-card w-full mt-1 px-3 py-2.5 text-sm outline-none"
             />
@@ -3191,7 +3195,7 @@ function PhoneOrderCompose({ medicines, pharmacyId, onDone, onBack }: {
             />
           </div>
           <button
-            disabled={!customerPhone.trim()}
+            disabled={!phoneValid}
             onClick={() => setStep("browse")}
             className="ph-btn-primary w-full h-12 mt-2"
           >

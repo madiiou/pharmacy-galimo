@@ -179,12 +179,22 @@ const manualOrderSchema = z.object({
   })).min(1),
 });
 
+function normalizeGuineaPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 9) return `+224${digits}`;
+  return `+${digits}`;
+}
+
 // Devis composé par le pharmacien pour un client au téléphone : rattaché à
 // son compte via son numéro, en attente de confirmation de sa part.
 ordersRouter.post("/manual", requireAuth, requireRole("admin", "pharmacy_partner"), async (req, res) => {
   const parsed = manualOrderSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const { pharmacyId, customerPhone, customerName, notes, items } = parsed.data;
+  const { pharmacyId, customerName, notes, items } = parsed.data;
+  // Les comptes Galimo sont enregistrés au format +224XXXXXXXXX : sans cette
+  // normalisation, un numéro saisi avec des espaces ne retrouve pas le compte
+  // et le devis part sur un compte invité que le client ne verra jamais.
+  const customerPhone = normalizeGuineaPhone(parsed.data.customerPhone);
 
   const allowedPharmacy = await canManagePharmacy(req.user!.sub, req.user!.role, pharmacyId);
   if (!allowedPharmacy) return res.status(403).json({ error: "Forbidden" });
