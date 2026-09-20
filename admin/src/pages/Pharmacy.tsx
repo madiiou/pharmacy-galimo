@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft, Search, ShoppingCart, Plus, Minus, Trash2, Check, X,
   Phone, Clock, Package, Store, ClipboardList, ChevronRight, Bell,
@@ -982,6 +982,14 @@ export default function Pharmacy() {
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
+  const [identity, setIdentity] = useState<ClientIdentity>(null);
+  useEffect(() => {
+    if (!getToken()) return;
+    api<{ display_name?: string; phone?: string }>("/auth/me")
+      .then((me) => setIdentity({ name: me.display_name || undefined, phone: me.phone || undefined }))
+      .catch(() => {});
+  }, []);
+
   const refreshOrders = async () => {
     if (!getToken()) return;
     try {
@@ -1120,6 +1128,7 @@ export default function Pharmacy() {
       )}
 
       {mode === "client" ? (
+        <ClientIdentityContext.Provider value={identity}>
         <ClientArea
           view={clientView}
           setView={setClientView}
@@ -1179,6 +1188,7 @@ export default function Pharmacy() {
             }
           }}
         />
+        </ClientIdentityContext.Provider>
       ) : (
         <PharmacistArea
           view={pharmView}
@@ -1386,6 +1396,7 @@ function PharmacyHome({ medicines, pharmacyWhatsapp, pharmacyPhone, pharmacySche
   onOpenCart: () => void;
   cartCount: number;
 }) {
+  const who = useContext(ClientIdentityContext);
   const [cat, setCat] = useState<Category>("all");
   const [search, setSearch] = useState("");
   const [justAdded, setJustAdded] = useState<Record<string, number>>({});
@@ -1440,7 +1451,7 @@ function PharmacyHome({ medicines, pharmacyWhatsapp, pharmacyPhone, pharmacySche
               </div>
               {pharmacyWhatsapp && (
                 <a
-                  href={`https://wa.me/${pharmacyWhatsapp.replace(/[^0-9]/g, "")}`}
+                  href={whatsappUrl(pharmacyWhatsapp, "Bonjour, j'ai une question.", who)}
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="Contacter la pharmacie sur WhatsApp"
@@ -1467,9 +1478,7 @@ function PharmacyHome({ medicines, pharmacyWhatsapp, pharmacyPhone, pharmacySche
 
         {pharmacyWhatsapp && (
           <a
-            href={`https://wa.me/${pharmacyWhatsapp.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(
-              "Bonjour, voici mon ordonnance."
-            )}`}
+            href={whatsappUrl(pharmacyWhatsapp, "Bonjour, voici mon ordonnance.", who)}
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => logEvent("whatsapp_prescription_click")}
@@ -1825,6 +1834,7 @@ function OrderSent({ order, getMed, pharmacyWhatsapp, logEvent, onSeeResponse, o
   onSeeResponse: () => void;
   onGoHome: () => void;
 }) {
+  const who = useContext(ClientIdentityContext);
   const needsRx = order.items.some((i) => getMed(i.medicineId).prescription);
   const steps = [
     { key: "sent", label: "Envoyée", icon: "📤" },
@@ -1906,9 +1916,7 @@ function OrderSent({ order, getMed, pharmacyWhatsapp, logEvent, onSeeResponse, o
             </div>
           </div>
           <a
-            href={`https://wa.me/${pharmacyWhatsapp.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(
-              `Bonjour, voici mon ordonnance pour la commande #${order.ref}.`
-            )}`}
+            href={whatsappUrl(pharmacyWhatsapp, `Bonjour, voici mon ordonnance pour la commande #${order.ref}.`, who)}
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => logEvent("whatsapp_prescription_click")}
@@ -2050,6 +2058,22 @@ function PharmacistResponse({ order, getMed, onAccept, onCancel, onBack }: {
       )}
     </div>
   );
+}
+
+// ---------- Identité du client pour les messages WhatsApp ----------
+// Nom et numéro Galimo du client connecté, ajoutés aux messages préécrits
+// pour que la pharmacie sache tout de suite qui lui écrit.
+type ClientIdentity = { name?: string; phone?: string } | null;
+const ClientIdentityContext = createContext<ClientIdentity>(null);
+
+function whatsappUrl(pharmacyWhatsapp: string, text: string, who: ClientIdentity): string {
+  const lines = [text];
+  if (who?.name || who?.phone) {
+    lines.push("");
+    if (who.name) lines.push(`Nom : ${who.name}`);
+    if (who.phone) lines.push(`Numéro Galimo : ${who.phone}`);
+  }
+  return `https://wa.me/${pharmacyWhatsapp.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(lines.join("\n"))}`;
 }
 
 // ---------- Remboursement : motif obligatoire ----------
