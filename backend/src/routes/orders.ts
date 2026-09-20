@@ -227,8 +227,10 @@ ordersRouter.post("/manual", requireAuth, requireRole("admin", "pharmacy_partner
 
     for (const item of pricedItems) {
       await client.query(
-        `INSERT INTO order_items (order_id, medicine_id, item_name, quantity, unit_price, subtotal)
-         VALUES ($1,$2,$3,$4,$5,$6)`,
+        // Le pharmacien a déjà chiffré chaque ligne : elle est donc disponible.
+        // Sans ça (NULL), l'écran client lisait "aucun médicament disponible".
+        `INSERT INTO order_items (order_id, medicine_id, item_name, quantity, unit_price, subtotal, is_available)
+         VALUES ($1,$2,$3,$4,$5,$6,true)`,
         [order.id, item.medicineId ?? null, item.itemName ?? null, item.quantity, item.unitPrice, item.unitPrice * item.quantity]
       );
     }

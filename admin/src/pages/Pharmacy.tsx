@@ -334,7 +334,9 @@ function apiOrderToDemo(o: any): Order {
       medicineId: it.medicine_id ?? it.id,
       itemId: it.id,
       quantity: it.quantity,
-      isAvailable: it.is_available,
+      // NULL = pas encore répondu, sauf si la commande est déjà chiffrée
+      // (devis téléphone créés avant la correction côté serveur).
+      isAvailable: it.is_available ?? (o.status === "awaiting_pharmacist" ? null : true),
       confirmedPrice: it.unit_price > 0 ? it.unit_price : null,
     })),
     status: apiOrderStatusToDemo(o.status),
