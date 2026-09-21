@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Loader2, Plus, Edit, Building2, TrendingUp, Activity, ShieldCheck, Store, Wallet, AlertTriangle, Users } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, Edit, Building2, TrendingUp, Activity, ShieldCheck, Store, Wallet, AlertTriangle, Users, Clock } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -27,6 +27,31 @@ interface OrderSummary {
   delivery_fee: number;
   origin: "client" | "pharmacist";
   created_at: string;
+  responded_at: string | null;
+  paid_at: string | null;
+  delivered_at: string | null;
+}
+
+// Durées de traitement : aide de calcul et d'affichage
+interface StepTiming { n: number; median: number | null; mean: number | null }
+
+function summarize(durationsMs: number[]): StepTiming {
+  const d = durationsMs.filter((x) => x >= 0).sort((a, b) => a - b);
+  if (!d.length) return { n: 0, median: null, mean: null };
+  const mid = Math.floor(d.length / 2);
+  const median = d.length % 2 ? d[mid] : (d[mid - 1] + d[mid]) / 2;
+  return { n: d.length, median, mean: d.reduce((s, x) => s + x, 0) / d.length };
+}
+
+function formatDuration(ms: number | null): string {
+  if (ms == null) return "—";
+  const min = Math.round(ms / 60000);
+  if (min < 1) return "moins d'1 min";
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h} h ${String(min % 60).padStart(2, "0")}`;
+  const d = Math.floor(h / 24);
+  return `${d} j ${h % 24} h`;
 }
 
 interface EventSummary {
@@ -137,6 +162,24 @@ function useAdminData() {
     return stats;
   }, [orders]);
 
+  // Délais de traitement des commandes passées par les clients (les devis
+  // composés au téléphone par la pharmacie n'ont pas d'attente de réponse).
+  const timings = useMemo(() => {
+    const t = (a: string | null | undefined, b: string | null | undefined) =>
+      a && b ? new Date(b).getTime() - new Date(a).getTime() : null;
+    const clientOrders = orders.filter((o) => o.origin === "client");
+    const collect = (f: (o: OrderSummary) => number | null) =>
+      summarize(clientOrders.map(f).filter((x): x is number => x != null));
+    const now = Date.now();
+    return {
+      reponse: collect((o) => t(o.created_at, o.responded_at)),
+      paiement: collect((o) => t(o.responded_at, o.paid_at)),
+      livraison: collect((o) => t(o.paid_at, o.delivered_at)),
+      total: collect((o) => t(o.created_at, o.delivered_at)),
+      waitingLong: clientOrders.filter((o) => o.status === "awaiting_pharmacist" && now - new Date(o.created_at).getTime() > 30 * 60_000).length,
+    };
+  }, [orders]);
+
   const whatsappStats = useMemo(() => {
     let contact = 0, prescription = 0;
     for (const e of events) {
@@ -192,7 +235,7 @@ function useAdminData() {
   const statsFor = (pharmacyId: string): PharmacyStats =>
     statsByPharmacy.get(pharmacyId) ?? { orders: 0, paidOrders: 0, gmv: 0, commission: 0 };
 
-  return { statsByPharmacy, statsFor, statusFunnel, clients, clientKpis, originStats, whatsappStats, loading };
+  return { statsByPharmacy, statsFor, statusFunnel, clients, clientKpis, originStats, whatsappStats, timings, loading };
 }
 
 function PharmacyDialog({
@@ -399,7 +442,7 @@ export default function AdminPharmacies() {
   const { isAdmin, loading } = useUserRoles();
   const { user, logout } = useAuth();
   const { pharmacies, createPharmacy, updatePharmacy, loading: pharmLoading } = usePharmacies();
-  const { statsByPharmacy, statsFor, statusFunnel, clients, clientKpis, originStats, whatsappStats, loading: statsLoading } = useAdminData();
+  const { statsByPharmacy, statsFor, statusFunnel, clients, clientKpis, originStats, whatsappStats, timings, loading: statsLoading } = useAdminData();
 
   if (loading || pharmLoading) {
     return (
@@ -533,7 +576,7 @@ export default function AdminPharmacies() {
           </TabsContent>
 
           <TabsContent value="monitoring" className="mt-4">
-            <MonitoringTab pharmacies={pharmacies} statsFor={statsFor} statusFunnel={statusFunnel} originStats={originStats} whatsappStats={whatsappStats} />
+            <MonitoringTab pharmacies={pharmacies} statsFor={statsFor} statusFunnel={statusFunnel} originStats={originStats} whatsappStats={whatsappStats} timings={timings} />
           </TabsContent>
 
           <TabsContent value="controle" className="mt-4">
@@ -628,12 +671,13 @@ function RevenusTab({ pharmacies, statsFor }: { pharmacies: Pharmacy[]; statsFor
   );
 }
 
-function MonitoringTab({ pharmacies, statsFor, statusFunnel, originStats, whatsappStats }: {
+function MonitoringTab({ pharmacies, statsFor, statusFunnel, originStats, whatsappStats, timings }: {
   pharmacies: Pharmacy[];
   statsFor: (id: string) => PharmacyStats;
   statusFunnel: Map<string, number>;
   originStats: Record<"client" | "pharmacist", OriginStats>;
   whatsappStats: { contactClicks: number; prescriptionClicks: number };
+  timings: { reponse: StepTiming; paiement: StepTiming; livraison: StepTiming; total: StepTiming; waitingLong: number };
 }) {
   const inactive = pharmacies.filter((p) => !p.is_active);
   const unverified = pharmacies.filter((p) => !p.is_verified);
@@ -654,6 +698,44 @@ function MonitoringTab({ pharmacies, statsFor, statusFunnel, originStats, whatsa
           <AlertRow label="Pharmacies inactives" count={inactive.length} items={inactive.map((p) => p.name)} />
           <AlertRow label="Pharmacies non vérifiées" count={unverified.length} items={unverified.map((p) => p.name)} />
           <AlertRow label="Sans propriétaire assigné" count={noOwner.length} items={noOwner.map((p) => p.name)} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Clock className="h-4 w-4 text-purple-600" />
+            Délais de traitement d'une commande
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 gap-y-2 items-center">
+            <span className="text-xs text-muted-foreground">Étape</span>
+            <span className="text-xs text-muted-foreground text-right">Typique</span>
+            <span className="text-xs text-muted-foreground text-right">Moyenne</span>
+            <span className="text-xs text-muted-foreground text-right">Commandes</span>
+            {([
+              ["Réponse de la pharmacie (demande → prix envoyés)", timings.reponse],
+              ["Paiement du client (prix envoyés → payée)", timings.paiement],
+              ["Remise au client (payée → livrée / retirée)", timings.livraison],
+              ["Total (demande → livrée / retirée)", timings.total],
+            ] as [string, StepTiming][]).map(([label, st]) => (
+              <Fragment key={label}>
+                <span>{label}</span>
+                <span className="text-right font-semibold">{formatDuration(st.median)}</span>
+                <span className="text-right text-muted-foreground">{formatDuration(st.mean)}</span>
+                <span className="text-right text-muted-foreground">{st.n}</span>
+              </Fragment>
+            ))}
+          </div>
+          {timings.waitingLong > 0 && (
+            <p className="text-amber-700 bg-amber-50 rounded px-3 py-2">
+              {timings.waitingLong} demande{timings.waitingLong > 1 ? "s" : ""} sans réponse de la pharmacie depuis plus de 30 minutes.
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            « Typique » est la médiane : la moitié des commandes vont plus vite, l'autre moitié moins vite. Mesuré sur les commandes passées par les clients, à partir de la mise en place du suivi.
+          </p>
         </CardContent>
       </Card>
 

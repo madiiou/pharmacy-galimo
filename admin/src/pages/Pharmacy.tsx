@@ -3384,6 +3384,8 @@ function MedicineFormModal({ initial, onClose, onSave, onDelete }: {
   const [name, setName] = useState(initial?.name || "");
   const [dosage, setDosage] = useState(initial?.dosage || "");
   const [description, setDescription] = useState(initial?.description || "");
+  const [posologie, setPosologie] = useState(initial?.posologie || "");
+  const [contreIndication, setContreIndication] = useState(initial?.contreIndication || "");
   const [category, setCategory] = useState<Exclude<Category, "all">>(initial?.category || "fievre");
   const [emoji, setEmoji] = useState(initial?.emoji || "💊");
   const [prescription, setPrescription] = useState(initial?.prescription || false);
@@ -3472,6 +3474,8 @@ function MedicineFormModal({ initial, onClose, onSave, onDelete }: {
       onOrder,
       stock,
       price: Number(price) > 0 ? Number(price) : undefined,
+      posologie: posologie.trim() || undefined,
+      contreIndication: contreIndication.trim() || undefined,
     });
   };
 
@@ -3618,6 +3622,28 @@ function MedicineFormModal({ initial, onClose, onSave, onDelete }: {
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
               placeholder="Utilisation, indications…"
+              className="w-full mt-1 p-3 rounded-xl bg-[hsl(var(--ph-muted))] text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ph-purple))] resize-none"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-[hsl(var(--ph-ink-soft))]">Posologie</label>
+            <textarea
+              value={posologie}
+              onChange={(e) => setPosologie(e.target.value)}
+              rows={4}
+              placeholder="Dose, rythme, durée…"
+              className="w-full mt-1 p-3 rounded-xl bg-[hsl(var(--ph-muted))] text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ph-purple))] resize-none"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-[hsl(var(--ph-ink-soft))]">Contre-indications</label>
+            <textarea
+              value={contreIndication}
+              onChange={(e) => setContreIndication(e.target.value)}
+              rows={3}
+              placeholder="Allergies, grossesse, maladies concernées…"
               className="w-full mt-1 p-3 rounded-xl bg-[hsl(var(--ph-muted))] text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ph-purple))] resize-none"
             />
           </div>
