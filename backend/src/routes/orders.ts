@@ -6,7 +6,11 @@ import { canManagePharmacy } from "./pharmacies.js";
 import { notifyOrderChange } from "../chat.js";
 import { requestDebit, refundDebit, getTransactionStatus } from "../galimoPartner.js";
 import { applyServiceFee } from "../pricing.js";
-import { pushNewOrder, pushOrderPaid, pushOrderCancelledByClient, pushPaymentFailed, pushQuoteConfirmed } from "../push.js";
+import {
+  pushNewOrder, pushOrderPaid, pushOrderCancelledByClient, pushPaymentFailed, pushQuoteConfirmed,
+  pushQuoteReadyToClient, pushOrderCancelledByPharmacyToClient, pushPaymentAcceptedToClient,
+  pushPaymentFailedToClient, pushRefundedToClient,
+} from "../push.js";
 
 export const ordersRouter = Router();
 
@@ -375,6 +379,7 @@ ordersRouter.post("/:id/pay", requireAuth, async (req, res) => {
         );
         notifyOrderChange(paid.rows[0]);
         void pushOrderPaid(paid.rows[0]);
+        void pushPaymentAcceptedToClient(paid.rows[0]);
         return res.json(paid.rows[0]);
       }
       if (["FAILED", "REFUSED", "EXPIRED"].includes(st.statut)) {
@@ -444,6 +449,7 @@ ordersRouter.post("/:id/pay", requireAuth, async (req, res) => {
       );
       notifyOrderChange(failed.rows[0]);
       void pushPaymentFailed(failed.rows[0]);
+      void pushPaymentFailedToClient(failed.rows[0]);
       return res.status(402).json({ error: "Paiement refusé : le débit n'a pas abouti. Vous pouvez réessayer." });
     }
 
@@ -561,6 +567,8 @@ ordersRouter.patch("/:id/price", requireAuth, requireRole("admin", "pharmacy_par
 
     await client.query("COMMIT");
     notifyOrderChange(result.rows[0]);
+    if (anyAvailable) void pushQuoteReadyToClient(result.rows[0]);
+    else void pushOrderCancelledByPharmacyToClient(result.rows[0]);
     res.json(result.rows[0]);
   } catch (err: any) {
     await client.query("ROLLBACK");
@@ -635,5 +643,9 @@ ordersRouter.patch("/:id/status", requireAuth, requireRole("admin", "pharmacy_pa
     [status ?? null, finalPaymentStatus, order.id, isRefund, refundReason ?? null, refundNote ?? null, req.user!.sub]
   );
   notifyOrderChange(result.rows[0]);
+  if (result.rows[0].status === "cancelled") {
+    if (isRefund) void pushRefundedToClient(result.rows[0], order.total_amount);
+    else void pushOrderCancelledByPharmacyToClient(result.rows[0]);
+  }
   res.json(result.rows[0]);
 });

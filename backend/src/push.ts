@@ -76,6 +76,98 @@ function fmtGNF(n: number): string {
   return new Intl.NumberFormat("fr-FR").format(n) + " GNF";
 }
 
+// Résumé d'une commande pour un message adressé au CLIENT (pas au pharmacien).
+async function describeOrderForClient(order: { id: string; pharmacy_id: string }) {
+  const pharmacy = await pool.query("SELECT name FROM pharmacies WHERE id = $1", [order.pharmacy_id]);
+  return {
+    ref: order.id.slice(0, 8).toUpperCase(),
+    pharmacyName: (pharmacy.rows[0]?.name || "la pharmacie") as string,
+  };
+}
+
+// La pharmacie a fixé les prix : le client doit confirmer et payer.
+export async function pushQuoteReadyToClient(order: { id: string; user_id: string; pharmacy_id: string }) {
+  if (!pushEnabled) return;
+  try {
+    const d = await describeOrderForClient(order);
+    await sendPushToUsers([order.user_id], {
+      title: "Votre commande est prête",
+      body: `#${d.ref} · ${d.pharmacyName} a fixé les prix : à confirmer et payer`,
+      url: "/",
+      tag: `quote-ready-${order.id}`,
+    });
+  } catch (err: any) {
+    console.error("[push] pushQuoteReadyToClient:", err?.message);
+  }
+}
+
+// La pharmacie a annulé la commande (rupture de stock, etc.), sans paiement à rembourser.
+export async function pushOrderCancelledByPharmacyToClient(order: { id: string; user_id: string; pharmacy_id: string }) {
+  if (!pushEnabled) return;
+  try {
+    const d = await describeOrderForClient(order);
+    await sendPushToUsers([order.user_id], {
+      title: "Commande annulée",
+      body: `#${d.ref} · ${d.pharmacyName} n'a pas pu honorer votre commande`,
+      url: "/",
+      tag: `cancelled-by-pharmacy-${order.id}`,
+    });
+  } catch (err: any) {
+    console.error("[push] pushOrderCancelledByPharmacyToClient:", err?.message);
+  }
+}
+
+// Le paiement du client a abouti.
+export async function pushPaymentAcceptedToClient(order: { id: string; user_id: string; pharmacy_id: string }) {
+  if (!pushEnabled) return;
+  try {
+    const d = await describeOrderForClient(order);
+    await sendPushToUsers([order.user_id], {
+      title: "Paiement accepté ✓",
+      body: `#${d.ref} · Commande confirmée, en préparation`,
+      url: "/",
+      tag: `paid-client-${order.id}`,
+    });
+  } catch (err: any) {
+    console.error("[push] pushPaymentAcceptedToClient:", err?.message);
+  }
+}
+
+// Le débit du client a échoué, a été refusé ou a expiré.
+export async function pushPaymentFailedToClient(order: { id: string; user_id: string; pharmacy_id: string }) {
+  if (!pushEnabled) return;
+  try {
+    const d = await describeOrderForClient(order);
+    await sendPushToUsers([order.user_id], {
+      title: "Paiement refusé",
+      body: `#${d.ref} · Le paiement n'a pas abouti, vous pouvez réessayer`,
+      url: "/",
+      tag: `payment-failed-client-${order.id}`,
+    });
+  } catch (err: any) {
+    console.error("[push] pushPaymentFailedToClient:", err?.message);
+  }
+}
+
+// Le client est remboursé (annulation par la pharmacie après paiement, ou
+// rattrapage automatique) : couvre tous les cas, manuel ou automatique — à
+// la différence du pharmacien, le client doit toujours être prévenu, c'est
+// son argent.
+export async function pushRefundedToClient(order: { id: string; user_id: string; pharmacy_id: string }, amount: number) {
+  if (!pushEnabled) return;
+  try {
+    const d = await describeOrderForClient(order);
+    await sendPushToUsers([order.user_id], {
+      title: "Remboursement effectué",
+      body: `#${d.ref} · ${fmtGNF(amount)} recrédités sur votre compte Galimo`,
+      url: "/",
+      tag: `refunded-client-${order.id}`,
+    });
+  } catch (err: any) {
+    console.error("[push] pushRefundedToClient:", err?.message);
+  }
+}
+
 // Un client vient d'envoyer une demande : la pharmacie doit la chiffrer.
 export async function pushNewOrder(order: { id: string; user_id: string; pharmacy_id: string }) {
   if (!pushEnabled) return;

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db.js";
-import { requireAuth, requireRole } from "../auth.js";
+import { requireAuth } from "../auth.js";
 import { pushEnabled, vapidPublicKey } from "../push.js";
 
 export const pushRouter = Router();
@@ -18,7 +18,9 @@ const subscribeSchema = z.object({
 
 // Enregistre (ou met à jour) l'appareil du pharmacien. Un même appareil qui
 // change de compte est réattribué au nouveau compte.
-pushRouter.post("/subscribe", requireAuth, requireRole("admin", "pharmacy_partner"), async (req, res) => {
+// Ouvert à tout compte connecté (client ou pharmacien) : chacun ne peut
+// s'abonner que pour son propre user_id, tiré du jeton, jamais pour un autre.
+pushRouter.post("/subscribe", requireAuth, async (req, res) => {
   if (!pushEnabled) return res.status(503).json({ error: "Push notifications are not configured" });
   const parsed = subscribeSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });

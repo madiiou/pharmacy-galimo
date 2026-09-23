@@ -3,7 +3,10 @@ import jwt from "jsonwebtoken";
 import { pool } from "../db.js";
 import { notifyOrderChange } from "../chat.js";
 import { refundDebit } from "../galimoPartner.js";
-import { pushOrderPaid, pushAutoRefunded, pushPaymentFailed } from "../push.js";
+import {
+  pushOrderPaid, pushAutoRefunded, pushPaymentFailed,
+  pushRefundedToClient, pushPaymentAcceptedToClient, pushPaymentFailedToClient,
+} from "../push.js";
 
 export const galimoPaymentWebhookRouter = Router();
 
@@ -61,6 +64,7 @@ galimoPaymentWebhookRouter.post("/", async (req, res) => {
         );
         notifyOrderChange(result.rows[0]);
         void pushAutoRefunded(result.rows[0], order.total_amount);
+        void pushRefundedToClient(result.rows[0], order.total_amount);
       } catch (err: any) {
         console.error(`[galimo-payment-webhook] auto-refund failed for cancelled order ${order.id}`, err);
         // On marque quand même 'paid' pour que ça reste visible et
@@ -81,8 +85,14 @@ galimoPaymentWebhookRouter.post("/", async (req, res) => {
     );
     notifyOrderChange(result.rows[0]);
     // Le webhook peut être rejoué : on n'alerte que pour le vrai changement d'état.
-    if (newPaymentStatus === "paid" && order.payment_status !== "paid") void pushOrderPaid(result.rows[0]);
-    if (newPaymentStatus === "unpaid" && order.payment_status !== "unpaid") void pushPaymentFailed(result.rows[0]);
+    if (newPaymentStatus === "paid" && order.payment_status !== "paid") {
+      void pushOrderPaid(result.rows[0]);
+      void pushPaymentAcceptedToClient(result.rows[0]);
+    }
+    if (newPaymentStatus === "unpaid" && order.payment_status !== "unpaid") {
+      void pushPaymentFailed(result.rows[0]);
+      void pushPaymentFailedToClient(result.rows[0]);
+    }
     res.status(200).end();
   } catch (err: any) {
     console.error("[galimo-payment-webhook] ERROR", err);

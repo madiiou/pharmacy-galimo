@@ -1069,6 +1069,21 @@ export default function Pharmacy() {
   const [activePharmOrderId, setActivePharmOrderId] = useState<string | null>(null);
 
   const payStatusRef = useRef<Map<string, string | undefined>>(new Map());
+  // Statut précédent de chaque commande, côté client : sert à repérer un
+  // devis fraîchement chiffré ou une annulation qui n'est pas la sienne
+  // (déjà signalée par son propre bouton "Annuler").
+  const clientStatusRef = useRef<Map<string, OrderStatus> | null>(null);
+  const selfCancelledRef = useRef<Set<string>>(new Set());
+  // Commandes avec une mise à jour pas encore consultée (badge "Nouveau" sur
+  // la carte) : complète le message flottant, au cas où il passe inaperçu.
+  const [unseenOrderIds, setUnseenOrderIds] = useState<Set<string>>(new Set());
+  const markOrderSeen = (id: string) =>
+    setUnseenOrderIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   // Commandes déjà connues côté pharmacien : sert à repérer les nouvelles (null = premier chargement, sans alerte).
   const seenOrdersRef = useRef<Set<string> | null>(null);
   const [alertsOn, setAlertsOn] = useState(() => typeof Notification !== "undefined" && Notification.permission === "granted");
@@ -1091,16 +1106,54 @@ export default function Pharmacy() {
       // Le resultat reel du paiement arrive apres coup (webhook Galimo) :
       // on l'annonce quand la commande passe de "en cours" a payee/refusee.
       if (modeRef.current === "client") {
+        const prevStatus = clientStatusRef.current;
+        const newlyUnseen: string[] = [];
         for (const o of next) {
           const before = payStatusRef.current.get(o.id);
           if (before === "processing" && o.paymentStatus === "paid") {
             sonner.success("Paiement accepté ✓", { description: `Commande #${o.ref}`, duration: 5000 });
+            newlyUnseen.push(o.id);
           } else if (before === "processing" && o.paymentStatus === "unpaid") {
             sonner.error("Paiement refusé", {
               description: `Commande #${o.ref} : le paiement n'a pas abouti. Vous pouvez réessayer.`,
               duration: 7000,
             });
+            newlyUnseen.push(o.id);
+          } else if (before && before !== "refunded" && o.paymentStatus === "refunded") {
+            sonner.success("Remboursement effectué", {
+              description: `Commande #${o.ref} : le montant a été recrédité sur votre compte Galimo.`,
+              duration: 7000,
+            });
+            newlyUnseen.push(o.id);
           }
+
+          // Comparaison au statut précédent : uniquement une fois qu'on a un
+          // premier relevé (prevStatus non nul), pour ne rien annoncer au
+          // tout premier chargement de la page.
+          if (prevStatus) {
+            const prev = prevStatus.get(o.id);
+            if (prev === "pending_pharmacist" && o.status === "awaiting_client") {
+              sonner.success("Votre devis est prêt", {
+                description: `Commande #${o.ref} : à confirmer et payer.`,
+                duration: 7000,
+              });
+              newlyUnseen.push(o.id);
+            } else if (prev && prev !== "cancelled" && o.status === "cancelled") {
+              if (selfCancelledRef.current.has(o.id)) {
+                selfCancelledRef.current.delete(o.id); // déjà annoncée par son propre bouton "Annuler"
+              } else {
+                sonner.error("Commande annulée par la pharmacie", {
+                  description: `Commande #${o.ref}${o.paymentStatus === "refunded" ? " : montant remboursé." : "."}`,
+                  duration: 7000,
+                });
+                newlyUnseen.push(o.id);
+              }
+            }
+          }
+        }
+        clientStatusRef.current = new Map(next.map((o) => [o.id, o.status]));
+        if (newlyUnseen.length) {
+          setUnseenOrderIds((prev) => new Set([...prev, ...newlyUnseen]));
         }
       }
       if (modeRef.current === "pharmacien") {
@@ -1185,8 +1238,8 @@ export default function Pharmacy() {
       const push = await ensurePushSubscription();
       sonner.success("Alertes activées", {
         description: push
-          ? "Vous serez prévenu à chaque nouvelle commande, même si la page est fermée."
-          : "Vous serez prévenu à chaque nouvelle commande tant que la page est ouverte.",
+          ? "Vous serez prévenu(e) dès qu'il y a du nouveau, même si la page est fermée."
+          : "Vous serez prévenu(e) dès qu'il y a du nouveau, tant que la page est ouverte.",
       });
     } else {
       sonner.info("Notifications bloquées par le navigateur", { description: "Le son et les messages dans l'appli restent actifs pendant que la page est ouverte." });
@@ -1322,6 +1375,10 @@ export default function Pharmacy() {
           orders={orders}
           activeOrder={activeOrder}
           setActiveOrderId={setActiveOrderId}
+          alertsOn={alertsOn}
+          enableAlerts={enableAlerts}
+          unseenOrderIds={unseenOrderIds}
+          markOrderSeen={markOrderSeen}
           retryPay={async (o) => {
             try {
               await api(`/orders/${o.id}/pay`, { method: "POST" });
@@ -1350,6 +1407,7 @@ export default function Pharmacy() {
           }}
           cancelOrder={async (id) => {
             const o = orders.find((x) => x.id === id);
+            selfCancelledRef.current.add(id);
             try {
               await api(`/orders/${id}/cancel`, { method: "PATCH" });
               await refreshOrders();
@@ -1415,11 +1473,16 @@ function ClientArea(props: {
   acceptOrder: (id: string) => Promise<void>;
   cancelOrder: (id: string) => void;
   retryPay: (o: Order) => Promise<void>;
+  alertsOn: boolean;
+  enableAlerts: () => Promise<void>;
+  unseenOrderIds: Set<string>;
+  markOrderSeen: (id: string) => void;
 }) {
   const {
     view, setView, medicines, pharmacyWhatsapp, pharmacyPhone, pharmacySchedule, logEvent, getMed, cart, setCart, addToCart,
     selectedMedicine, setSelectedMedicine, submitOrder,
-    orders, activeOrder, setActiveOrderId, acceptOrder, cancelOrder, retryPay,
+    orders, activeOrder, setActiveOrderId, acceptOrder, cancelOrder, retryPay, alertsOn, enableAlerts,
+    unseenOrderIds, markOrderSeen,
   } = props;
 
   const cartCount = cart.reduce((s, l) => s + l.quantity, 0);
@@ -1464,6 +1527,8 @@ function ClientArea(props: {
           getMed={getMed}
           pharmacyWhatsapp={pharmacyWhatsapp}
           logEvent={logEvent}
+          alertsOn={alertsOn}
+          enableAlerts={enableAlerts}
           onSeeResponse={() => setView("response")}
           onGoHome={() => setView("home")}
         />
@@ -1481,7 +1546,11 @@ function ClientArea(props: {
         <OrderHistory
           orders={orders}
           getMed={getMed}
+          alertsOn={alertsOn}
+          enableAlerts={enableAlerts}
+          unseenOrderIds={unseenOrderIds}
           onOpen={(o) => {
+            markOrderSeen(o.id);
             setActiveOrderId(o.id);
             if (o.status === "awaiting_client") setView("response");
             else setView("sent");
@@ -2001,11 +2070,13 @@ function CartScreen({ cart, getMed, onBack, onUpdate, onRemove, onConfirm }: {
 }
 
 // ---------- Screen 4: Order Sent ----------
-function OrderSent({ order, getMed, pharmacyWhatsapp, logEvent, onSeeResponse, onGoHome }: {
+function OrderSent({ order, getMed, pharmacyWhatsapp, logEvent, alertsOn, enableAlerts, onSeeResponse, onGoHome }: {
   order: Order;
   getMed: (id: string) => Medicine;
   pharmacyWhatsapp: string | null;
   logEvent: (type: "whatsapp_contact_click" | "whatsapp_prescription_click") => void;
+  alertsOn: boolean;
+  enableAlerts: () => Promise<void>;
   onSeeResponse: () => void;
   onGoHome: () => void;
 }) {
@@ -2035,6 +2106,21 @@ function OrderSent({ order, getMed, pharmacyWhatsapp, logEvent, onSeeResponse, o
         <p className="text-sm text-[hsl(var(--ph-ink-soft))] mt-1">Référence</p>
         <p className="ph-display font-bold text-xl text-[hsl(var(--ph-purple))] mt-1">#{order.ref}</p>
       </div>
+
+      {!alertsOn && (
+        <button
+          onClick={enableAlerts}
+          className="w-full flex items-center gap-3 rounded-2xl border border-[hsl(var(--ph-purple)/0.25)] bg-[hsl(var(--ph-purple)/0.06)] p-4 mb-5 text-left active:scale-[0.99] transition"
+        >
+          <div className="h-10 w-10 rounded-full bg-[hsl(var(--ph-purple)/0.12)] flex items-center justify-center flex-shrink-0">
+            <Bell className="h-5 w-5 text-[hsl(var(--ph-purple))]" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-semibold">Être prévenu(e) de la réponse</p>
+            <p className="text-[11px] text-[hsl(var(--ph-ink-soft))] mt-0.5">Activez les notifications pour ne pas rouvrir l'appli sans arrêt.</p>
+          </div>
+        </button>
+      )}
 
       <div className="ph-card p-5">
         <h3 className="ph-display font-semibold text-sm mb-4">Suivi</h3>
@@ -2362,7 +2448,7 @@ function OrdersByDay({ orders, render }: { orders: Order[]; render: (o: Order) =
 }
 
 // ---------- Screen 6: Order History ----------
-function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onCancel, onBack }: {
+function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onCancel, onBack, alertsOn, enableAlerts, unseenOrderIds }: {
   orders: Order[];
   getMed: (id: string) => Medicine;
   onOpen: (o: Order) => void;
@@ -2370,6 +2456,9 @@ function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onCancel,
   onRetryPay: (o: Order) => Promise<void>;
   onCancel: (o: Order) => void;
   onBack: () => void;
+  alertsOn: boolean;
+  enableAlerts: () => Promise<void>;
+  unseenOrderIds: Set<string>;
 }) {
   const canReorder = (s: OrderStatus) => s === "delivered" || s === "accepted" || s === "ready" || s === "cancelled" || s === "expired";
   const [retryingId, setRetryingId] = useState<string | null>(null);
@@ -2393,7 +2482,16 @@ function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onCancel,
         <button onClick={onBack} className="h-9 w-9 rounded-full bg-white border border-[hsl(var(--ph-border))] flex items-center justify-center">
           <ArrowLeft className="h-4 w-4" />
         </button>
-        <h1 className="ph-display font-bold text-xl">Mes commandes</h1>
+        <h1 className="ph-display font-bold text-xl flex-1">Mes commandes</h1>
+        <button
+          onClick={enableAlerts}
+          className={`h-9 w-9 rounded-full flex items-center justify-center relative ${alertsOn ? "bg-emerald-50" : "bg-white border border-[hsl(var(--ph-border))]"}`}
+          aria-label={alertsOn ? "Notifications activées" : "Activer les notifications"}
+          title={alertsOn ? "Notifications activées" : "Activer les notifications"}
+        >
+          <Bell className={`h-4 w-4 ${alertsOn ? "text-emerald-600" : "text-[hsl(var(--ph-ink-soft))]"}`} />
+          {!alertsOn && <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-amber-400" />}
+        </button>
       </div>
 
       <div className="flex gap-1.5 bg-[hsl(var(--ph-muted))] rounded-full p-1 mb-4">
@@ -2419,7 +2517,12 @@ function OrderHistory({ orders, getMed, onOpen, onReorder, onRetryPay, onCancel,
             <div key={o.id} className="ph-card p-4">
              <button onClick={() => onOpen(o)} className="w-full text-left active:scale-[0.99] transition">
               <div className="flex items-center justify-between mb-2">
-                <span className="ph-display font-bold text-sm">#{o.ref} <span className="font-normal text-[11px] text-[hsl(var(--ph-ink-soft))]">· {orderTime(o.createdAt)}</span></span>
+                <span className="ph-display font-bold text-sm flex items-center gap-1.5">
+                  #{o.ref} <span className="font-normal text-[11px] text-[hsl(var(--ph-ink-soft))]">· {orderTime(o.createdAt)}</span>
+                  {unseenOrderIds.has(o.id) && (
+                    <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-[hsl(var(--ph-purple))] text-white">Nouveau</span>
+                  )}
+                </span>
                 <StatusBadge status={o.status} paymentStatus={o.paymentStatus} />
               </div>
               <p className="text-xs text-[hsl(var(--ph-ink-soft))] line-clamp-1">
