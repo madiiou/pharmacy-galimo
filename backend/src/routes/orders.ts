@@ -6,7 +6,7 @@ import { canManagePharmacy } from "./pharmacies.js";
 import { notifyOrderChange } from "../chat.js";
 import { requestDebit, refundDebit, getTransactionStatus } from "../galimoPartner.js";
 import { applyServiceFee } from "../pricing.js";
-import { pushNewOrder, pushOrderPaid } from "../push.js";
+import { pushNewOrder, pushOrderPaid, pushOrderCancelledByClient, pushPaymentFailed, pushQuoteConfirmed } from "../push.js";
 
 export const ordersRouter = Router();
 
@@ -346,6 +346,10 @@ ordersRouter.patch("/:id/confirm", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "Order is not awaiting confirmation" });
   }
   notifyOrderChange(result.rows[0]);
+  // Seul un devis composé par la pharmacie au téléphone lui apprend quelque
+  // chose ici : pour une commande client classique, elle attend déjà le
+  // paiement, qui la préviendra lui-même (pushOrderPaid).
+  if (result.rows[0].origin === "pharmacist") void pushQuoteConfirmed(result.rows[0]);
   res.json(result.rows[0]);
 });
 
@@ -439,6 +443,7 @@ ordersRouter.post("/:id/pay", requireAuth, async (req, res) => {
         [debit.idrequest, order.id]
       );
       notifyOrderChange(failed.rows[0]);
+      void pushPaymentFailed(failed.rows[0]);
       return res.status(402).json({ error: "Paiement refusé : le débit n'a pas abouti. Vous pouvez réessayer." });
     }
 
@@ -488,6 +493,7 @@ ordersRouter.patch("/:id/cancel", requireAuth, async (req, res) => {
     [order.id]
   );
   notifyOrderChange(result.rows[0]);
+  void pushOrderCancelledByClient(result.rows[0]);
   res.json(result.rows[0]);
 });
 

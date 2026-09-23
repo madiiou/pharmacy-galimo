@@ -72,6 +72,10 @@ async function describeOrder(order: { id: string; user_id: string; pharmacy_id: 
   };
 }
 
+function fmtGNF(n: number): string {
+  return new Intl.NumberFormat("fr-FR").format(n) + " GNF";
+}
+
 // Un client vient d'envoyer une demande : la pharmacie doit la chiffrer.
 export async function pushNewOrder(order: { id: string; user_id: string; pharmacy_id: string }) {
   if (!pushEnabled) return;
@@ -103,5 +107,76 @@ export async function pushOrderPaid(order: { id: string; user_id: string; pharma
     });
   } catch (err: any) {
     console.error("[push] pushOrderPaid:", err?.message);
+  }
+}
+
+// Le client a annulé sa propre commande (avant paiement, ou paiement raté).
+export async function pushOrderCancelledByClient(order: { id: string; user_id: string; pharmacy_id: string }) {
+  if (!pushEnabled) return;
+  try {
+    const d = await describeOrder(order);
+    if (!d.ownerId) return;
+    await sendPushToUsers([d.ownerId], {
+      title: "Commande annulée",
+      body: `#${d.ref} · ${d.who} a annulé sa commande`,
+      url: "/pharmacien",
+      tag: `cancelled-${order.id}`,
+    });
+  } catch (err: any) {
+    console.error("[push] pushOrderCancelledByClient:", err?.message);
+  }
+}
+
+// Le débit a échoué, a été refusé ou a expiré chez Galimo — le client devra réessayer.
+export async function pushPaymentFailed(order: { id: string; user_id: string; pharmacy_id: string }) {
+  if (!pushEnabled) return;
+  try {
+    const d = await describeOrder(order);
+    if (!d.ownerId) return;
+    await sendPushToUsers([d.ownerId], {
+      title: "Paiement refusé",
+      body: `#${d.ref} · ${d.who} : le paiement n'a pas abouti`,
+      url: "/pharmacien",
+      tag: `payment-failed-${order.id}`,
+    });
+  } catch (err: any) {
+    console.error("[push] pushPaymentFailed:", err?.message);
+  }
+}
+
+// Remboursement déclenché automatiquement par le système (webhook ou
+// rattrapage), sans action directe du pharmacien : à la différence d'un
+// remboursement qu'il déclenche lui-même depuis l'appli, il ne le sait pas.
+export async function pushAutoRefunded(order: { id: string; user_id: string; pharmacy_id: string }, amount: number) {
+  if (!pushEnabled) return;
+  try {
+    const d = await describeOrder(order);
+    if (!d.ownerId) return;
+    await sendPushToUsers([d.ownerId], {
+      title: "Remboursement automatique",
+      body: `#${d.ref} · ${d.who} : ${fmtGNF(amount)} recrédités (commande déjà annulée)`,
+      url: "/pharmacien",
+      tag: `refunded-${order.id}`,
+    });
+  } catch (err: any) {
+    console.error("[push] pushAutoRefunded:", err?.message);
+  }
+}
+
+// Le client a confirmé un devis composé par la pharmacie au téléphone :
+// elle sait déjà que la commande existe, mais pas encore que le client a dit oui.
+export async function pushQuoteConfirmed(order: { id: string; user_id: string; pharmacy_id: string }) {
+  if (!pushEnabled) return;
+  try {
+    const d = await describeOrder(order);
+    if (!d.ownerId) return;
+    await sendPushToUsers([d.ownerId], {
+      title: "Devis confirmé",
+      body: `#${d.ref} · ${d.who} a confirmé la commande par téléphone`,
+      url: "/pharmacien",
+      tag: `confirmed-${order.id}`,
+    });
+  } catch (err: any) {
+    console.error("[push] pushQuoteConfirmed:", err?.message);
   }
 }
