@@ -1,0 +1,14 @@
+-- Appareils abonnés aux notifications push (une ligne par navigateur/téléphone).
+-- L'endpoint est fourni par le navigateur et identifie l'appareil de façon unique.
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint text NOT NULL UNIQUE,
+  p256dh text NOT NULL,
+  auth text NOT NULL,
+  user_agent text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  last_seen_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id);

@@ -6,6 +6,7 @@ import { canManagePharmacy } from "./pharmacies.js";
 import { notifyOrderChange } from "../chat.js";
 import { requestDebit, refundDebit, getTransactionStatus } from "../galimoPartner.js";
 import { applyServiceFee } from "../pricing.js";
+import { pushNewOrder, pushOrderPaid } from "../push.js";
 
 export const ordersRouter = Router();
 
@@ -23,6 +24,8 @@ async function createOrderInTransaction(
     const { order, payload } = await handler(client);
     await client.query("COMMIT");
     notifyOrderChange(order);
+    // Seule une demande client attend une réponse de la pharmacie (pas un devis téléphone).
+    if (order.status === "awaiting_pharmacist") void pushNewOrder(order);
     res.status(201).json(payload);
   } catch (err: any) {
     await client.query("ROLLBACK");
@@ -367,6 +370,7 @@ ordersRouter.post("/:id/pay", requireAuth, async (req, res) => {
           [order.id]
         );
         notifyOrderChange(paid.rows[0]);
+        void pushOrderPaid(paid.rows[0]);
         return res.json(paid.rows[0]);
       }
       if (["FAILED", "REFUSED", "EXPIRED"].includes(st.statut)) {

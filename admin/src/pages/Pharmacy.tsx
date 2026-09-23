@@ -842,6 +842,86 @@ const PHARMACY = {
   deliveryCities: ["Conakry"] as string[],
 };
 
+// ---------- Alertes de commande (côté pharmacien) ----------
+// Trois notes courtes, générées par le navigateur : pas de fichier son à héberger.
+function playAlertSound() {
+  try {
+    const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+    const ctx = new Ctx();
+    const beep = (freq: number, start: number) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.frequency.value = freq;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const t0 = ctx.currentTime + start;
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(0.3, t0 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.25);
+      osc.start(t0);
+      osc.stop(t0 + 0.3);
+    };
+    beep(880, 0);
+    beep(1175, 0.3);
+    beep(880, 0.6);
+    setTimeout(() => ctx.close(), 1500);
+  } catch {}
+}
+
+// Notification du système, seulement si la page n'est pas au premier plan
+// (sinon le message dans l'appli suffit).
+function systemNotify(title: string, body: string) {
+  try {
+    if (typeof Notification !== "undefined" && Notification.permission === "granted" && document.hidden) {
+      new Notification(title, { body });
+    }
+  } catch {}
+}
+
+// ---------- Notifications push (page fermée) ----------
+function urlBase64ToUint8Array(b64: string): Uint8Array {
+  const pad = "=".repeat((4 - (b64.length % 4)) % 4);
+  const raw = atob((b64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+}
+
+// Abonne cet appareil aux alertes du serveur. Renvoie false si le navigateur
+// ne sait pas faire ou si le serveur n'a pas (encore) les clés : les alertes
+// dans la page restent alors le seul moyen, sans erreur visible.
+async function ensurePushSubscription(): Promise<boolean> {
+  try {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return false;
+    const cfg = await api<{ enabled: boolean; publicKey: string | null }>("/push/public-key");
+    if (!cfg.enabled || !cfg.publicKey) return false;
+    const reg = await navigator.serviceWorker.register("/sw.js");
+    await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(cfg.publicKey) as BufferSource,
+      });
+    }
+    const json = sub.toJSON();
+    await api("/push/subscribe", { method: "POST", body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys }) });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// À la déconnexion : cet appareil ne doit plus recevoir les alertes de ce compte.
+async function removePushSubscription() {
+  try {
+    if (!("serviceWorker" in navigator)) return;
+    const reg = await navigator.serviceWorker.getRegistration("/sw.js");
+    const sub = await reg?.pushManager.getSubscription();
+    if (!sub) return;
+    await api("/push/unsubscribe", { method: "POST", body: JSON.stringify({ endpoint: sub.endpoint }) }).catch(() => {});
+    await sub.unsubscribe();
+  } catch {}
+}
+
 function WhatsAppIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
@@ -900,8 +980,9 @@ type Mode = "client" | "pharmacien";
 export default function Pharmacy() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const signOut = () => {
+  const signOut = async () => {
     if (!window.confirm("Se déconnecter ?")) return;
+    await removePushSubscription(); // avant logout : il faut encore le jeton
     logout();
     navigate("/login?redirect=" + encodeURIComponent("/pharmacien"), { replace: true });
   };
@@ -988,6 +1069,9 @@ export default function Pharmacy() {
   const [activePharmOrderId, setActivePharmOrderId] = useState<string | null>(null);
 
   const payStatusRef = useRef<Map<string, string | undefined>>(new Map());
+  // Commandes déjà connues côté pharmacien : sert à repérer les nouvelles (null = premier chargement, sans alerte).
+  const seenOrdersRef = useRef<Set<string> | null>(null);
+  const [alertsOn, setAlertsOn] = useState(() => typeof Notification !== "undefined" && Notification.permission === "granted");
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
@@ -1019,6 +1103,30 @@ export default function Pharmacy() {
           }
         }
       }
+      if (modeRef.current === "pharmacien") {
+        const seen = seenOrdersRef.current;
+        if (seen) {
+          const fresh = next.filter((o) => !seen.has(o.id) && o.status === "pending_pharmacist");
+          const paidNow = next.filter((o) => {
+            const before = payStatusRef.current.get(o.id);
+            return before !== undefined && before !== "paid" && o.paymentStatus === "paid";
+          });
+          for (const o of fresh) {
+            const n = o.items.length;
+            sonner.success(`Nouvelle commande #${o.ref}`, {
+              description: `${o.clientName} · ${n} article${n > 1 ? "s" : ""} à chiffrer`,
+              duration: 10000,
+            });
+            systemNotify("Nouvelle commande", `#${o.ref} · ${o.clientName}`);
+          }
+          for (const o of paidNow) {
+            sonner.success(`Commande #${o.ref} payée`, { description: "À préparer.", duration: 10000 });
+            systemNotify("Commande payée", `#${o.ref} · ${o.clientName} : à préparer`);
+          }
+          if (fresh.length || paidNow.length) playAlertSound();
+        }
+        seenOrdersRef.current = new Set(next.map((o) => o.id));
+      }
       payStatusRef.current = new Map(next.map((o) => [o.id, o.paymentStatus]));
       setOrders(next);
     } catch {}
@@ -1047,6 +1155,43 @@ export default function Pharmacy() {
   useEffect(() => {
     try { localStorage.setItem("galimo.pharmacy.cart", JSON.stringify(cart)); } catch {}
   }, [cart]);
+
+  // Nombre de demandes à traiter dans le titre de l'onglet, visible même en arrière-plan.
+  useEffect(() => {
+    if (mode !== "pharmacien") return;
+    const base = "Pharmacy Galimo - Admin";
+    const n = orders.filter((o) => o.status === "pending_pharmacist").length;
+    document.title = n > 0 ? `(${n}) Nouvelle commande - ${base}` : base;
+    return () => { document.title = base; };
+  }, [orders, mode]);
+
+  // Appareil déjà autorisé : on renouvelle l'abonnement en silence (il peut avoir expiré).
+  useEffect(() => {
+    if (mode !== "pharmacien" || !getToken()) return;
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") void ensurePushSubscription();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+
+  const enableAlerts = async () => {
+    playAlertSound(); // le clic autorise aussi le son sur ce navigateur
+    if (typeof Notification === "undefined") {
+      sonner.info("Alertes activées", { description: "Son et messages dans l'appli." });
+      return;
+    }
+    let perm = Notification.permission;
+    if (perm === "default") perm = await Notification.requestPermission();
+    setAlertsOn(perm === "granted");
+    if (perm === "granted") {
+      const push = await ensurePushSubscription();
+      sonner.success("Alertes activées", {
+        description: push
+          ? "Vous serez prévenu à chaque nouvelle commande, même si la page est fermée."
+          : "Vous serez prévenu à chaque nouvelle commande tant que la page est ouverte.",
+      });
+    } else {
+      sonner.info("Notifications bloquées par le navigateur", { description: "Le son et les messages dans l'appli restent actifs pendant que la page est ouverte." });
+    }
+  };
 
   const activeOrder = orders.find((o) => o.id === activeOrderId) || null;
   const activePharmOrder = orders.find((o) => o.id === activePharmOrderId) || null;
@@ -1121,7 +1266,15 @@ export default function Pharmacy() {
             {/* Pas de flèche de retour ici : elle renvoyait à l'espace client
                 depuis n'importe quel écran. Chaque écran pharmacien a son
                 propre retour, et la barre du bas sert à naviguer. */}
-            <div className="w-9" />
+            <button
+              onClick={enableAlerts}
+              className="relative h-9 w-9 rounded-full bg-white/15 backdrop-blur flex items-center justify-center active:scale-95"
+              aria-label="Activer les alertes de commande"
+              title={alertsOn ? "Alertes activées" : "Activer les alertes de commande"}
+            >
+              <Bell className="h-4 w-4" />
+              <span className={`absolute top-1 right-1 h-2 w-2 rounded-full ${alertsOn ? "bg-emerald-400" : "bg-amber-400"}`} />
+            </button>
             <div className="flex items-center gap-1.5">
               <div className="h-8 w-8 rounded-full bg-white/15 flex items-center justify-center">
                 <Pill className="h-4 w-4" />

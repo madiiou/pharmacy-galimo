@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { pool } from "../db.js";
 import { notifyOrderChange } from "../chat.js";
 import { refundDebit } from "../galimoPartner.js";
+import { pushOrderPaid } from "../push.js";
 
 export const galimoPaymentWebhookRouter = Router();
 
@@ -78,6 +79,8 @@ galimoPaymentWebhookRouter.post("/", async (req, res) => {
       [newPaymentStatus, order.id]
     );
     notifyOrderChange(result.rows[0]);
+    // Le webhook peut être rejoué : on n'alerte que pour le passage réel à "payée".
+    if (newPaymentStatus === "paid" && order.payment_status !== "paid") void pushOrderPaid(result.rows[0]);
     res.status(200).end();
   } catch (err: any) {
     console.error("[galimo-payment-webhook] ERROR", err);

@@ -12,6 +12,7 @@ import { usersRouter } from "./routes/users.js";
 import { galimoPaymentWebhookRouter } from "./routes/galimoPaymentWebhook.js";
 import { galimoBalanceRouter } from "./routes/galimoBalance.js";
 import { eventsRouter } from "./routes/events.js";
+import { pushRouter } from "./routes/push.js";
 import { attachChat } from "./chat.js";
 import { startPaymentReconciler } from "./paymentReconciler.js";
 
@@ -55,6 +56,7 @@ app.use("/api/users", usersRouter);
 app.use("/api/payments/galimo-webhook", galimoPaymentWebhookRouter);
 app.use("/api/galimo-partner", galimoBalanceRouter);
 app.use("/api/events", eventsRouter);
+app.use("/api/push", pushRouter);
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error("[express error handler]", err);

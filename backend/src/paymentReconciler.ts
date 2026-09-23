@@ -1,6 +1,7 @@
 import { pool } from "./db.js";
 import { notifyOrderChange } from "./chat.js";
 import { getTransactionStatus, refundDebit } from "./galimoPartner.js";
+import { pushOrderPaid } from "./push.js";
 
 // Filet de sécurité si le webhook Galimo n'arrive pas (ou arrive avant que
 // notre propre écriture soit terminée) : une commande ne doit jamais rester
@@ -41,6 +42,7 @@ async function reconcileOnce() {
       if (updated.rowCount) {
         console.log(`[payment-reconciler] ${order.payment_reference}: ${st.statut} -> ${next}`);
         notifyOrderChange(updated.rows[0]);
+        if (next === "paid") void pushOrderPaid(updated.rows[0]);
       }
     } catch (err: any) {
       console.error(`[payment-reconciler] ${order.payment_reference}: ${err.message}`);
