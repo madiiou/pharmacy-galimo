@@ -272,3 +272,21 @@ export async function pushQuoteConfirmed(order: { id: string; user_id: string; p
     console.error("[push] pushQuoteConfirmed:", err?.message);
   }
 }
+
+// Alerte de connexion pour un compte pharmacien/admin, sur CET appareil (pas
+// besoin d'avoir la page ouverte) : si quelqu'un d'autre se connecte, le
+// vrai titulaire du compte le sait tout de suite, au lieu de le découvrir
+// bien plus tard comme lors de l'intrusion du 1er octobre.
+export async function pushLoginAlert(userId: string, info: { ip: string }) {
+  if (!pushEnabled) return;
+  try {
+    await sendPushToUsers([userId], {
+      title: "Connexion à votre compte",
+      body: `Nouvelle connexion depuis l'adresse ${info.ip}. Si ce n'est pas vous, changez votre mot de passe.`,
+      url: "/pharmacien",
+      tag: "login-alert",
+    });
+  } catch (err: any) {
+    console.error("[push] pushLoginAlert:", err?.message);
+  }
+}

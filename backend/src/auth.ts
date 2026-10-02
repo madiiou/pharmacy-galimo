@@ -19,8 +19,11 @@ export function comparePassword(password: string, hash: string) {
   return bcrypt.compare(password, hash);
 }
 
-export function signToken(payload: JwtPayload) {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: "30d" });
+// Un compte pharmacien/admin a accès à des données sensibles (commandes,
+// paiements) : son jeton reste valable moins longtemps qu'un compte client,
+// pour réduire la fenêtre d'exposition si jamais il fuite.
+export function signToken(payload: JwtPayload, expiresIn: jwt.SignOptions["expiresIn"] = "30d") {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn });
 }
 
 declare global {

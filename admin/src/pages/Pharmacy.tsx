@@ -3,7 +3,7 @@ import {
   ArrowLeft, Search, ShoppingCart, Plus, Minus, Trash2, Check, X,
   Phone, Clock, Package, Store, ClipboardList, ChevronRight, Bell,
   MapPin, AlertCircle, CheckCircle2, Sparkles, Pill, Edit3, Upload, Loader2,
-  RotateCcw, BarChart3, Printer, CalendarClock, TrendingUp, AlertTriangle, Wallet, LogOut,
+  RotateCcw, BarChart3, Printer, CalendarClock, TrendingUp, AlertTriangle, Wallet, LogOut, ShieldCheck,
 } from "lucide-react";
 import jsPDF from "jspdf";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
@@ -4472,6 +4472,92 @@ function PharmacistHours({ pharmacyId, schedule, setSchedule }: {
           </div>
         ))}
       </div>
+
+      <ChangePasswordCard />
+    </div>
+  );
+}
+
+// ---------- Sécurité du compte (pharmacien) ----------
+function ChangePasswordCard() {
+  const [open, setOpen] = useState(false);
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const reset = () => { setCurrent(""); setNext(""); setConfirm(""); };
+
+  const submit = async () => {
+    if (next.length < 8) {
+      sonner.error("Mot de passe trop court", { description: "Au moins 8 caractères." });
+      return;
+    }
+    if (next !== confirm) {
+      sonner.error("Les deux mots de passe ne correspondent pas");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api("/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({ currentPassword: current, newPassword: next }),
+      });
+      sonner.success("Mot de passe modifié ✓");
+      reset();
+      setOpen(false);
+    } catch (err) {
+      sonner.error("Échec", { description: (err as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="ph-card p-4 mt-4">
+      <div className="flex items-center gap-3 mb-1">
+        <div className="h-9 w-9 rounded-full bg-[hsl(var(--ph-purple)/0.1)] flex items-center justify-center">
+          <ShieldCheck className="h-4 w-4 text-[hsl(var(--ph-purple))]" />
+        </div>
+        <h3 className="ph-display font-semibold text-sm">Sécurité du compte</h3>
+      </div>
+      {!open ? (
+        <button onClick={() => setOpen(true)} className="w-full h-11 mt-3 rounded-xl bg-[hsl(var(--ph-muted))] text-sm font-semibold">
+          Changer le mot de passe
+        </button>
+      ) : (
+        <div className="space-y-2 mt-3">
+          <input
+            type="password"
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+            placeholder="Mot de passe actuel"
+            className="w-full h-11 px-3 rounded-xl bg-[hsl(var(--ph-muted))] text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ph-purple))]"
+          />
+          <input
+            type="password"
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+            placeholder="Nouveau mot de passe (8 caractères min.)"
+            className="w-full h-11 px-3 rounded-xl bg-[hsl(var(--ph-muted))] text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ph-purple))]"
+          />
+          <input
+            type="password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            placeholder="Confirmer le nouveau mot de passe"
+            className="w-full h-11 px-3 rounded-xl bg-[hsl(var(--ph-muted))] text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--ph-purple))]"
+          />
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button onClick={() => { setOpen(false); reset(); }} className="h-11 rounded-xl bg-white border border-[hsl(var(--ph-border))] text-sm font-semibold">
+              Annuler
+            </button>
+            <button onClick={submit} disabled={busy || !current || !next || !confirm} className="ph-btn-primary h-11 disabled:opacity-50">
+              {busy ? "..." : "Valider"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
