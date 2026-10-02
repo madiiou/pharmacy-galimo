@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
-import { requireAuth } from "../auth.js";
+import { requireAuth, requireRole } from "../auth.js";
+import { scanLimiter } from "../rateLimit.js";
 
 export const scanMedicineRouter = Router();
 
@@ -23,7 +24,9 @@ Si la boîte n'est pas lisible ou pas un médicament, retourne {"error": "raison
 
 const bodySchema = z.object({ image: z.string().min(1) });
 
-scanMedicineRouter.post("/", requireAuth, async (req, res) => {
+// Réservé au pharmacien/admin : c'est un outil de catalogage, pas une
+// fonctionnalité cliente, et chaque appel a un coût réel (API OpenAI).
+scanMedicineRouter.post("/", requireAuth, requireRole("admin", "pharmacy_partner"), scanLimiter, async (req, res) => {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return res.status(500).json({ error: "Scan non configuré (OPENAI_API_KEY manquante)" });
@@ -72,6 +75,7 @@ scanMedicineRouter.post("/", requireAuth, async (req, res) => {
 
     res.json(result);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "unknown" });
+    console.error("[scan-medicine] ERROR", err?.message ?? err);
+    res.status(500).json({ error: "Scan impossible, réessayez." });
   }
 });

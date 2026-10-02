@@ -35,3 +35,13 @@ export const paymentLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Trop de tentatives de paiement. Réessayez dans quelques minutes." },
 });
+
+// Scan de médicament : appelle une API payante (OpenAI Vision) à chaque
+// requête — une limite plus stricte protège directement contre un coût réel.
+export const scanLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Trop de scans. Réessayez dans quelques minutes." },
+});

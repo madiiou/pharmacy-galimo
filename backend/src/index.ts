@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
 import { createServer } from "node:http";
 import { pool } from "./db.js";
 import { authRouter } from "./routes/auth.js";
@@ -31,6 +32,16 @@ const app = express();
 // req.ip renvoie l'IP interne de nginx pour tout le monde, et une limite de
 // tentatives par IP (ci-dessous) ne distinguerait aucun visiteur.
 app.set("trust proxy", 1);
+app.use(
+  helmet({
+    // API JSON pure, jamais de page HTML servie par ce serveur (nginx s'en
+    // charge séparément) : la CSP de helmet n'a rien à protéger ici et la
+    // politique de ressources cross-origin casserait les appels légitimes
+    // depuis l'admin et la webview galimo.tech, sur d'autres domaines.
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: false,
+  })
+);
 app.use(cors());
 app.use(
   express.json({
