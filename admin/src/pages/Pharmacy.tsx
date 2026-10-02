@@ -1266,6 +1266,13 @@ export default function Pharmacy() {
     };
 
   const addToCart = (id: string, qty = 1) => {
+    // Même garde-fou qu'à la commande, mais dès le premier ajout au panier :
+    // pas la peine de laisser quelqu'un remplir un panier qu'il ne pourra de
+    // toute façon pas valider sans l'appli Galimo.
+    if (!getToken() || (user && user.role !== "user")) {
+      setShowGalimoPrompt(true);
+      return;
+    }
     setCart((prev) => {
       const line = prev.find((l) => l.medicineId === id);
       if (line) return prev.map((l) => (l.medicineId === id ? { ...l, quantity: l.quantity + qty } : l));
