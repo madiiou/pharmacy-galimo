@@ -1279,7 +1279,10 @@ export default function Pharmacy() {
     city?: string;
     deliveryAddress?: string;
   }) => {
-    if (!getToken()) {
+    // Pas de session, ou une session pharmacien/admin qui traîne sur l'espace
+    // client (ex: oublié connecté sur cette page après un test) : ce n'est
+    // pas un vrai client Galimo, donc pas de vraie commande possible non plus.
+    if (!getToken() || (user && user.role !== "user")) {
       setShowGalimoPrompt(true);
       return;
     }
@@ -1361,6 +1364,7 @@ export default function Pharmacy() {
         <GalimoAppPrompt open={showGalimoPrompt} onClose={() => setShowGalimoPrompt(false)} />
         <ClientArea
           onRequireGalimo={() => setShowGalimoPrompt(true)}
+          isRealClient={!!getToken() && (!user || user.role === "user")}
           view={clientView}
           setView={setClientView}
           medicines={medicines}
@@ -1481,12 +1485,13 @@ function ClientArea(props: {
   unseenOrderIds: Set<string>;
   markOrderSeen: (id: string) => void;
   onRequireGalimo: () => void;
+  isRealClient: boolean;
 }) {
   const {
     view, setView, medicines, pharmacyWhatsapp, pharmacyPhone, pharmacySchedule, logEvent, getMed, cart, setCart, addToCart,
     selectedMedicine, setSelectedMedicine, submitOrder,
     orders, activeOrder, setActiveOrderId, acceptOrder, cancelOrder, retryPay, alertsOn, enableAlerts,
-    unseenOrderIds, markOrderSeen, onRequireGalimo,
+    unseenOrderIds, markOrderSeen, onRequireGalimo, isRealClient,
   } = props;
 
   const cartCount = cart.reduce((s, l) => s + l.quantity, 0);
@@ -1588,7 +1593,7 @@ function ClientArea(props: {
         setView={setView}
         cartCount={cartCount}
         ordersDot={orders.some((o) => o.status === "awaiting_client")}
-        isLoggedIn={!!getToken()}
+        isLoggedIn={isRealClient}
         onRequireGalimo={onRequireGalimo}
       />
     </>
