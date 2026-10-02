@@ -33,7 +33,11 @@ async function createOrderInTransaction(
     res.status(201).json(payload);
   } catch (err: any) {
     await client.query("ROLLBACK");
-    res.status(err.status ?? 500).json({ error: err.message ?? "Internal error" });
+    const status = err.status ?? 500;
+    // Une erreur "contrôlée" (status + message posés volontairement par notre
+    // code, ex: "Pharmacy not found") est utile au client. Une erreur inattendue
+    // (driver DB, etc.) ne doit jamais exposer son message brut au client.
+    res.status(status).json({ error: status === 500 ? "Internal error" : err.message ?? "Request error" });
   } finally {
     client.release();
   }
@@ -572,7 +576,8 @@ ordersRouter.patch("/:id/price", requireAuth, requireRole("admin", "pharmacy_par
     res.json(result.rows[0]);
   } catch (err: any) {
     await client.query("ROLLBACK");
-    res.status(err.status ?? 500).json({ error: err.message ?? "Internal error" });
+    const status = err.status ?? 500;
+    res.status(status).json({ error: status === 500 ? "Internal error" : err.message ?? "Request error" });
   } finally {
     client.release();
   }

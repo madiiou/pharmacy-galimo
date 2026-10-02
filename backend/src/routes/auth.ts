@@ -5,6 +5,10 @@ import { hashPassword, comparePassword, signToken, requireAuth } from "../auth.j
 
 export const authRouter = Router();
 
+// Hash bcrypt d'un mot de passe qui n'existe pas : sert uniquement à occuper
+// le même temps de calcul quand l'email n'est pas trouvé (voir /login).
+const DUMMY_HASH = "$2a$10$CwTycUXWue0Thq9StjUM0uJ8Z8vC8a8L8x8VUmS8fY8b8h8Z8X8Xa";
+
 // Retrouve les infos utilisateur à partir d'un token existant (utilisé quand
 // l'app galimo.tech ouvre une page pharmacie avec ?token=... dans l'URL).
 authRouter.get("/me", requireAuth, async (req, res) => {
@@ -64,7 +68,11 @@ authRouter.post("/login", async (req, res) => {
     [email]
   );
   const user = result.rows[0];
-  if (!user || !(await comparePassword(password, user.password_hash))) {
+  // On compare toujours contre un hash (le sien, ou un hash factice si
+  // l'email n'existe pas) : sinon répondre nettement plus vite quand l'email
+  // est inconnu permettrait de deviner quels emails sont enregistrés.
+  const passwordOk = await comparePassword(password, user?.password_hash ?? DUMMY_HASH);
+  if (!user || !passwordOk) {
     return res.status(401).json({ error: "Invalid credentials" });
   }
 

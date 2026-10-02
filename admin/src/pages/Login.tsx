@@ -14,8 +14,16 @@ export function Login() {
   const expired = searchParams.get("expired") === "1";
 
   // Où aller après connexion : la page demandée, sinon l'espace du rôle.
+  // Le paramètre "redirect" vient de l'URL, donc potentiellement d'un lien
+  // envoyé par quelqu'un d'autre : on n'accepte qu'un chemin interne simple
+  // ("/xxx"), jamais une adresse externe ("//evil.com", "\evil.com",
+  // "https://evil.com"), pour ne pas servir de redirection ouverte.
+  const safeRedirect = (raw: string | null): string | null =>
+    raw && /^\/(?!\/|\\)[^\s\\]*$/.test(raw) ? raw : null;
+
   const destination = (role?: string) =>
-    searchParams.get("redirect") || (role === "pharmacy_partner" ? "/pharmacien" : role === "admin" ? "/admin-pharmacies" : "/");
+    safeRedirect(searchParams.get("redirect")) ??
+    (role === "pharmacy_partner" ? "/pharmacien" : role === "admin" ? "/admin-pharmacies" : "/");
 
   // Déjà connecté : inutile de ressaisir le mot de passe.
   useEffect(() => {

@@ -37,7 +37,9 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
     return res.status(401).json({ error: "Missing bearer token" });
   }
   try {
-    req.user = jwt.verify(header.slice(7), JWT_SECRET) as JwtPayload;
+    // On impose HS256 explicitement : sans ça, un jeton fabriqué avec un
+    // autre algorithme pourrait en théorie être accepté selon la librairie.
+    req.user = jwt.verify(header.slice(7), JWT_SECRET, { algorithms: ["HS256"] }) as JwtPayload;
     next();
   } catch {
     res.status(401).json({ error: "Invalid or expired token" });

@@ -1087,6 +1087,7 @@ export default function Pharmacy() {
   // Commandes déjà connues côté pharmacien : sert à repérer les nouvelles (null = premier chargement, sans alerte).
   const seenOrdersRef = useRef<Set<string> | null>(null);
   const [alertsOn, setAlertsOn] = useState(() => typeof Notification !== "undefined" && Notification.permission === "granted");
+  const [showGalimoPrompt, setShowGalimoPrompt] = useState(false);
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
@@ -1279,7 +1280,7 @@ export default function Pharmacy() {
     deliveryAddress?: string;
   }) => {
     if (!getToken()) {
-      navigate("/login?redirect=" + encodeURIComponent("/shop"));
+      setShowGalimoPrompt(true);
       return;
     }
     if (!pharmacyId) return;
@@ -1357,7 +1358,9 @@ export default function Pharmacy() {
         </div>
       ) : mode === "client" ? (
         <ClientIdentityContext.Provider value={identity}>
+        <GalimoAppPrompt open={showGalimoPrompt} onClose={() => setShowGalimoPrompt(false)} />
         <ClientArea
+          onRequireGalimo={() => setShowGalimoPrompt(true)}
           view={clientView}
           setView={setClientView}
           medicines={medicines}
@@ -1477,12 +1480,13 @@ function ClientArea(props: {
   enableAlerts: () => Promise<void>;
   unseenOrderIds: Set<string>;
   markOrderSeen: (id: string) => void;
+  onRequireGalimo: () => void;
 }) {
   const {
     view, setView, medicines, pharmacyWhatsapp, pharmacyPhone, pharmacySchedule, logEvent, getMed, cart, setCart, addToCart,
     selectedMedicine, setSelectedMedicine, submitOrder,
     orders, activeOrder, setActiveOrderId, acceptOrder, cancelOrder, retryPay, alertsOn, enableAlerts,
-    unseenOrderIds, markOrderSeen,
+    unseenOrderIds, markOrderSeen, onRequireGalimo,
   } = props;
 
   const cartCount = cart.reduce((s, l) => s + l.quantity, 0);
@@ -1584,12 +1588,14 @@ function ClientArea(props: {
         setView={setView}
         cartCount={cartCount}
         ordersDot={orders.some((o) => o.status === "awaiting_client")}
+        isLoggedIn={!!getToken()}
+        onRequireGalimo={onRequireGalimo}
       />
     </>
   );
 }
 
-function ClientTabBar({ view, setView, cartCount, ordersDot }: { view: ClientView; setView: (v: ClientView) => void; cartCount: number; ordersDot?: boolean }) {
+function ClientTabBar({ view, setView, cartCount, ordersDot, isLoggedIn, onRequireGalimo }: { view: ClientView; setView: (v: ClientView) => void; cartCount: number; ordersDot?: boolean; isLoggedIn: boolean; onRequireGalimo: () => void }) {
   const tabs = [
     { key: "home" as ClientView, icon: Store, label: "Boutique" },
     { key: "cart" as ClientView, icon: ShoppingCart, label: "Panier", badge: cartCount },
@@ -1604,7 +1610,7 @@ function ClientTabBar({ view, setView, cartCount, ordersDot }: { view: ClientVie
           return (
             <button
               key={t.key}
-              onClick={() => setView(t.key)}
+              onClick={() => (t.key === "history" && !isLoggedIn ? onRequireGalimo() : setView(t.key))}
               className="relative flex flex-col items-center gap-1 py-2.5 active:scale-95 transition"
             >
               <div className="relative">
@@ -2404,6 +2410,39 @@ function RefundDialog({ orderRef, amount, delivered, onConfirm, onClose }: {
             {busy ? "Envoi…" : "Rembourser"}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Invitation à installer l'appli Galimo ----------
+// Un visiteur qui arrive directement sur pharmacy.galimo.tech (hors webview
+// Galimo) peut regarder le catalogue librement, mais commander ou suivre ses
+// commandes demande un vrai compte Galimo : on l'y invite au bon moment,
+// plutôt que de le renvoyer vers un formulaire mot de passe qu'il n'a jamais créé.
+function GalimoAppPrompt({ open, onClose }: { open: boolean; onClose: () => void }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/50 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-sm p-6 text-center" onClick={(e) => e.stopPropagation()}>
+        <div className="h-14 w-14 mx-auto rounded-2xl bg-[hsl(var(--ph-purple)/0.1)] flex items-center justify-center mb-3">
+          <Pill className="h-7 w-7 text-[hsl(var(--ph-purple))]" />
+        </div>
+        <h2 className="ph-display font-bold text-lg">Commandez avec l'appli Galimo</h2>
+        <p className="text-sm text-[hsl(var(--ph-ink-soft))] mt-2 leading-relaxed">
+          Pour passer commande et la suivre, il vous faut un compte Galimo. Téléchargez l'appli, c'est gratuit et rapide.
+        </p>
+        <a
+          href="https://galimo.tech/app"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ph-btn-primary w-full h-12 mt-5 flex items-center justify-center"
+        >
+          Télécharger l'appli Galimo
+        </a>
+        <button onClick={onClose} className="w-full h-10 mt-2 text-sm font-semibold text-[hsl(var(--ph-ink-soft))]">
+          Continuer à regarder
+        </button>
       </div>
     </div>
   );
