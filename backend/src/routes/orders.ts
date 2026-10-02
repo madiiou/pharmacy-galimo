@@ -1,6 +1,7 @@
 import { Router, type Response } from "express";
 import { z } from "zod";
 import { pool } from "../db.js";
+import { orderCreationLimiter, paymentLimiter } from "../rateLimit.js";
 import { requireAuth, requireRole } from "../auth.js";
 import { canManagePharmacy } from "./pharmacies.js";
 import { notifyOrderChange } from "../chat.js";
@@ -69,7 +70,7 @@ const createOrderSchema = z.object({
 });
 
 // Création d'une commande (côté client, Flutter)
-ordersRouter.post("/", requireAuth, async (req, res) => {
+ordersRouter.post("/", requireAuth, orderCreationLimiter, async (req, res) => {
   const parsed = createOrderSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { pharmacyId, items, notes } = parsed.data;
@@ -133,7 +134,7 @@ const requestOrderSchema = z.object({
 
 // Demande du client : il choisit des articles sans connaître le prix, le
 // pharmacien fixera les prix réels ensuite (esprit du module d'origine).
-ordersRouter.post("/request", requireAuth, async (req, res) => {
+ordersRouter.post("/request", requireAuth, orderCreationLimiter, async (req, res) => {
   const parsed = requestOrderSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { pharmacyId, items, deliveryMode, city, deliveryAddress, notes } = parsed.data;
@@ -362,7 +363,7 @@ ordersRouter.patch("/:id/confirm", requireAuth, async (req, res) => {
 });
 
 // Le client paie sa commande confirmée via son wallet Galimo (API Partenaire)
-ordersRouter.post("/:id/pay", requireAuth, async (req, res) => {
+ordersRouter.post("/:id/pay", requireAuth, paymentLimiter, async (req, res) => {
   const orderResult = await pool.query("SELECT * FROM orders WHERE id = $1", [req.params.id]);
   if (!orderResult.rowCount) return res.status(404).json({ error: "Not found" });
   const order = orderResult.rows[0];

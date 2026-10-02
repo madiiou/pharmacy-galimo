@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db.js";
 import { hashPassword, comparePassword, signToken, requireAuth } from "../auth.js";
+import { authLimiter } from "../rateLimit.js";
 
 export const authRouter = Router();
 
@@ -27,7 +28,7 @@ const registerSchema = z.object({
   phone: z.string().optional(),
 });
 
-authRouter.post("/register", async (req, res) => {
+authRouter.post("/register", authLimiter, async (req, res) => {
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
@@ -56,7 +57,7 @@ const loginSchema = z.object({
   password: z.string(),
 });
 
-authRouter.post("/login", async (req, res) => {
+authRouter.post("/login", authLimiter, async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });

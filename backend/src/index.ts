@@ -27,6 +27,10 @@ process.on("uncaughtException", (err) => {
 });
 
 const app = express();
+// nginx est le seul reverse proxy devant l'API (un seul "saut") : sans ça,
+// req.ip renvoie l'IP interne de nginx pour tout le monde, et une limite de
+// tentatives par IP (ci-dessous) ne distinguerait aucun visiteur.
+app.set("trust proxy", 1);
 app.use(cors());
 app.use(
   express.json({
