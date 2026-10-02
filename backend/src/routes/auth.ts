@@ -25,7 +25,6 @@ const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
   displayName: z.string().optional(),
-  phone: z.string().optional(),
 });
 
 authRouter.post("/register", authLimiter, async (req, res) => {
@@ -33,7 +32,7 @@ authRouter.post("/register", authLimiter, async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const { email, password, displayName, phone } = parsed.data;
+  const { email, password, displayName } = parsed.data;
 
   const existing = await pool.query("SELECT id FROM users WHERE email = $1", [email]);
   if (existing.rowCount) {
@@ -41,11 +40,17 @@ authRouter.post("/register", authLimiter, async (req, res) => {
   }
 
   const passwordHash = await hashPassword(password);
+  // Le téléphone n'est JAMAIS pris depuis ce que l'appelant envoie ici :
+  // c'est le seul champ utilisé pour demander un débit Galimo (voir /pay),
+  // donc l'accepter en clair permettrait à n'importe qui de s'inscrire en
+  // déclarant le numéro de quelqu'un d'autre. Seuls le webhook galimo.tech
+  // (signature vérifiée) et les comptes créés par un pharmacien/admin
+  // peuvent légitimement associer un numéro à un compte.
   const result = await pool.query(
     `INSERT INTO users (email, password_hash, display_name, phone)
-     VALUES ($1, $2, $3, $4)
+     VALUES ($1, $2, $3, NULL)
      RETURNING id, email, display_name, phone, role`,
-    [email, passwordHash, displayName ?? null, phone ?? null]
+    [email, passwordHash, displayName ?? null]
   );
   const user = result.rows[0];
   const token = signToken({ sub: user.id, role: user.role });

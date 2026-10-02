@@ -67,7 +67,10 @@ galimoWebhookRouter.post("/", async (req, res) => {
         [phone, placeholderEmail, name ?? null, phone]
       );
       user = result.rows[0];
-    } else {
+    } else if (user.role === "user") {
+      // Un compte pharmacien/admin ne doit jamais être modifié par ce webhook
+      // (voir plus bas) : ce "else if" ne s'applique qu'aux comptes clients,
+      // les seuls pour qui une synchronisation automatique de profil a du sens.
       const result = await pool.query(
         `UPDATE users SET
            email = COALESCE($1, email),
@@ -80,6 +83,13 @@ galimoWebhookRouter.post("/", async (req, res) => {
         [email ?? null, name ?? null, phone, user.id]
       );
       user = result.rows[0];
+    } else {
+      // Compte pharmacien/admin : on ne touche à rien (email, mot de passe,
+      // téléphone...). Ce webhook vient de galimo.tech et synchronise des
+      // profils clients ; un compte "staff" a un identifiant de connexion
+      // géré par nous et ne doit jamais être écrasé silencieusement — c'est
+      // exactement ce qui est arrivé une fois avant ce correctif.
+      console.log(`[galimo-webhook] SKIP update: user ${user.id} has role ${user.role}, profile left untouched`);
     }
 
     console.log(`[galimo-webhook] OK: user ${user.id} (phone ${phone})`);
