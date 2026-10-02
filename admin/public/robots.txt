@@ -1,0 +1,95 @@
+User-agent: *
+Allow: /
+Disallow: /pharmacien
+Disallow: /admin-pharmacies
+Disallow: /login
+Disallow: /espaces
+
+# Robots des assistants IA : autorisés explicitement (OpenAI, Anthropic,
+# Perplexity, Google, ByteDance, Amazon, Apple, Common Crawl — utilisé pour
+# entraîner beaucoup de modèles) aux mêmes conditions que les autres.
+User-agent: GPTBot
+Allow: /
+Disallow: /pharmacien
+Disallow: /admin-pharmacies
+Disallow: /login
+Disallow: /espaces
+
+User-agent: ChatGPT-User
+Allow: /
+Disallow: /pharmacien
+Disallow: /admin-pharmacies
+Disallow: /login
+Disallow: /espaces
+
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /pharmacien
+Disallow: /admin-pharmacies
+Disallow: /login
+Disallow: /espaces
+
+User-agent: ClaudeBot
+Allow: /
+Disallow: /pharmacien
+Disallow: /admin-pharmacies
+Disallow: /login
+Disallow: /espaces
+
+User-agent: Claude-Web
+Allow: /
+Disallow: /pharmacien
+Disallow: /admin-pharmacies
+Disallow: /login
+Disallow: /espaces
+
+User-agent: anthropic-ai
+Allow: /
+Disallow: /pharmacien
+Disallow: /admin-pharmacies
+Disallow: /login
+Disallow: /espaces
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /pharmacien
+Disallow: /admin-pharmacies
+Disallow: /login
+Disallow: /espaces
+
+User-agent: Google-Extended
+Allow: /
+Disallow: /pharmacien
+Disallow: /admin-pharmacies
+Disallow: /login
+Disallow: /espaces
+
+User-agent: CCBot
+Allow: /
+Disallow: /pharmacien
+Disallow: /admin-pharmacies
+Disallow: /login
+Disallow: /espaces
+
+User-agent: Bytespider
+Allow: /
+Disallow: /pharmacien
+Disallow: /admin-pharmacies
+Disallow: /login
+Disallow: /espaces
+
+User-agent: Amazonbot
+Allow: /
+Disallow: /pharmacien
+Disallow: /admin-pharmacies
+Disallow: /login
+Disallow: /espaces
+
+User-agent: Applebot-Extended
+Allow: /
+Disallow: /pharmacien
+Disallow: /admin-pharmacies
+Disallow: /login
+Disallow: /espaces
+
+Sitemap: https://pharmacy.galimo.tech/sitemap.xml
