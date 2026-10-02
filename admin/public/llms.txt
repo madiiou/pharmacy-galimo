@@ -1,20 +1,26 @@
 # Galimo Pharmacie
 
-> Pharmacie en ligne à Conakry, Guinée. Commande de médicaments avec retrait en
-> pharmacie ou livraison, paiement sécurisé via le portefeuille mobile Galimo.
-> Galimo est la plateforme technologique ; la pharmacie partenaire physique
-> est Pharmacie Saoudatou.
+> Plateforme de pharmacie en ligne à Conakry, Guinée, éditée par Galimo.
+> Commande de médicaments avec retrait en pharmacie ou livraison, paiement
+> sécurisé via le portefeuille mobile Galimo. Galimo Pharmacie s'appuie sur
+> un réseau de pharmacies physiques partenaires ; Pharmacie Saoudatou est la
+> toute première, d'autres pharmacies rejoindront le réseau par la suite.
 
 ## À propos
 
-Galimo Pharmacie permet à un client, à Conakry, de parcourir le catalogue
-d'une pharmacie partenaire, de commander des médicaments (avec ou sans
-ordonnance), de choisir un retrait en pharmacie ou une livraison, et de payer
+Galimo Pharmacie est la marque et la plateforme ; les pharmacies affichées
+sur le site sont des établissements physiques réels, partenaires de Galimo,
+et non des filiales de Galimo. Un client à Conakry peut parcourir le
+catalogue d'une pharmacie partenaire, commander des médicaments (avec ou
+sans ordonnance), choisir un retrait en pharmacie ou une livraison, et payer
 en ligne via Galimo — l'application mobile money ouest-africaine. Une
 commande peut aussi être composée directement par la pharmacie au téléphone,
 pour un client qui l'appelle.
 
-## Pharmacie partenaire actuelle
+## Pharmacies partenaires
+
+Le réseau ne compte pour l'instant qu'une seule pharmacie partenaire ;
+d'autres suivront.
 
 - **Nom** : Pharmacie Saoudatou
 - **Adresse** : Lambanyi, Conakry, Guinée
