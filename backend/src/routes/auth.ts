@@ -28,40 +28,12 @@ authRouter.get("/me", requireAuth, async (req, res) => {
   res.json(result.rows[0]);
 });
 
-const registerSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
-  displayName: z.string().optional(),
-});
-
-authRouter.post("/register", authLimiter, async (req, res) => {
-  const parsed = registerSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
-  }
-  const { email, password, displayName } = parsed.data;
-
-  const existing = await pool.query("SELECT id FROM users WHERE email = $1", [email]);
-  if (existing.rowCount) {
-    return res.status(409).json({ error: "Email already registered" });
-  }
-
-  const passwordHash = await hashPassword(password);
-  // Le téléphone n'est JAMAIS pris depuis ce que l'appelant envoie ici :
-  // c'est le seul champ utilisé pour demander un débit Galimo (voir /pay),
-  // donc l'accepter en clair permettrait à n'importe qui de s'inscrire en
-  // déclarant le numéro de quelqu'un d'autre. Seuls le webhook galimo.tech
-  // (signature vérifiée) et les comptes créés par un pharmacien/admin
-  // peuvent légitimement associer un numéro à un compte.
-  const result = await pool.query(
-    `INSERT INTO users (email, password_hash, display_name, phone)
-     VALUES ($1, $2, $3, NULL)
-     RETURNING id, email, display_name, phone, role`,
-    [email, passwordHash, displayName ?? null]
-  );
-  const user = result.rows[0];
-  const token = signToken({ sub: user.id, role: user.role });
-  res.status(201).json({ token, user });
+// Inscription libre par email/mot de passe : fermée. Aucun écran de l'appli
+// ne l'utilise — les clients arrivent par le webhook galimo.tech, les comptes
+// pharmacien/admin sont créés par nous. Elle ne servait qu'à fabriquer des
+// comptes en masse (intrusion du 1er octobre 2026).
+authRouter.post("/register", (_req, res) => {
+  res.status(410).json({ error: "Inscription désactivée. Utilisez l'application Galimo : https://galimo.tech/app" });
 });
 
 const loginSchema = z.object({

@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { pool } from "./db.js";
 import type { Request, Response, NextFunction } from "express";
 
 const JWT_SECRET = process.env.JWT_SECRET as string;
@@ -56,4 +57,21 @@ export function requireRole(...roles: Role[]) {
     }
     next();
   };
+}
+
+// Seul un vrai client Galimo peut commander ou payer : un compte arrivé par
+// le webhook galimo.tech (signature vérifiée), qui pose external_id. Un compte
+// créé autrement (appel direct à l'API, sans passer par l'appli Galimo) est
+// refusé ici, même s'il contourne complètement le site.
+export async function requireGalimoClient(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await pool.query("SELECT role, external_id FROM users WHERE id = $1", [req.user!.sub]);
+    const u = result.rows[0];
+    if (!u || u.role !== "user" || !u.external_id) {
+      return res.status(403).json({ error: "Commandez depuis l'application Galimo : https://galimo.tech/app" });
+    }
+    next();
+  } catch {
+    res.status(500).json({ error: "Internal error" });
+  }
 }
